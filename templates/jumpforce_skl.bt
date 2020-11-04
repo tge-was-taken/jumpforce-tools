@@ -1,0 +1,112 @@
+//------------------------------------------------
+//--- 010 Editor v11.0 Binary Template
+//
+//      File: 
+//   Authors: 
+//   Version: 
+//   Purpose: 
+//  Category: 
+// File Mask: 
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+
+#include "common/include.h"
+
+local int sklBoneIndex = 0;
+typedef struct
+{
+    SetRandomBackColor();
+    u16 NameOffset;
+    s16 Field02; // unused
+    s8 Field04; // unused
+    s8 Depth; // depth of the node in the tree
+    s8 NextDistance; // distance to next node
+    s8 Type; // 5 possible types (0-5)
+    f32 LocalTransform[3*4];
+    f32 WorldTransform[3*4];
+    TVector3 Min;
+    TVector3 Max;
+
+    local int Index = sklBoneIndex++;
+    local string Name = ReadString( NameOffset + 0x10 );
+
+    Printf( "%s %d\n", Name, NextDistance );
+} Sp2ModelSkeletonDataFileBone <optimize=false>;
+
+typedef struct
+{
+    SetRandomBackColor();
+    string Name;
+} Sp2ModelSkeletonDataFileBoneName <optimize=false>;
+
+typedef struct 
+{
+    SetRandomBackColor();
+    BigEndian();
+    u32 Signature;
+    u32 DataSize; // size of data after headers
+    u32 ResourceInfoSize; // size of RSI following the data
+    u8 AdditionalHeaderCount; // item size: 16. used to seek to data.
+    u8 Field0D; // unused
+    u8 Field0E; // unused 
+    u8 Field0F; // unused
+    LittleEndian();
+} Sp2ResourceItemFileHeader;
+
+typedef struct
+{
+    SetRandomBackColor();
+    local u64 start = FTell();
+    u32 Field00; // 3, unused
+    u16 BonesOffset;
+    u16 BoneCount;
+    u16 MaxDepth; // depth of the tree
+    u16 NamesOffset;
+
+    FSeek( start + BonesOffset );
+    Sp2ModelSkeletonDataFileBone Bones[BoneCount];
+    FSeek( start + NamesOffset );
+    struct { Sp2ModelSkeletonDataFileBoneName BoneNames[BoneCount + 1]; } BoneNames;
+} Sp2ModelSkeletonDataFileHeader;
+typedef struct
+{
+    Sp2ResourceItemFileHeader Header;
+
+    FSeek( (1 + Header.AdditionalHeaderCount) * 16 );
+    Sp2ModelSkeletonDataFileHeader Data;
+} Sp2ModelSkeletonDataFile;
+
+Sp2ModelSkeletonDataFile File;
+
+
+void PrintTree()
+{
+    local int i;
+    for (i = 0; i < File.Data.BoneCount; ++i)
+    {
+        if (File.Data.Bones[i].ParentId == 0)
+        {
+            PrintBone(File.Data.Bones[i], 
+                "", 
+                "");
+        }
+    }
+}
+
+void PrintBone(Sp2ModelSkeletonDataFileBone& bone, string prefix, string childrenPrefix)
+{
+    Printf(prefix);
+    Printf(bone.Name);
+    Printf("\n");
+    local int i;
+    for (i = bone.Index + 1; i < File.Data.BoneCount; ++i)
+    {
+        if (File.Data.Bones[i].ParentId - 1 == bone.Index)
+        {
+            PrintBone(File.Data.Bones[i], 
+                childrenPrefix + "├── ", 
+                childrenPrefix + "│   ");
+        }
+    }
+}
