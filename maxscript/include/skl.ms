@@ -27,6 +27,31 @@ global g_sklProfileTitle = undefined;
 global g_sklProfileStartTime = 0;
 global g_sklProfileEndTime = 0;
 
+struct sklExpSkeletonInfo
+(
+	MaxDepth = -1,
+	BoneInfo = #(),
+	NameLookup = #()
+)
+
+struct sklExpBoneInfo
+(
+	MaxBone,
+	Index,
+	Depth,
+	NameOffset,
+	Next,
+	NextDistance,
+	LocalTransform,
+	InvBindPoseMatrix
+)
+
+struct sklExpBoneNameLookup
+(
+	BoneName,
+	Index
+)
+
 fn sklEndProfile =
 (
 	g_sklProfileEndTime = timeStamp();
@@ -43,12 +68,6 @@ fn sklBeginProfile title =
 	g_sklProfileStartTime = timeStamp();
 )
 
-fn sklImportFromFile filePath =
-(
-	local file = ioOpenFileRead( filePath );
-	sklImportFromStream file filePath;
-)
-
 fn sklImpTransformMatrix m =
 (
 	if ( g_sklConfigConvertToZUP ) then
@@ -57,6 +76,147 @@ fn sklImpTransformMatrix m =
 	)
 	
 	m *= scalematrix [g_sklConfigScale, g_sklConfigScale, g_sklConfigScale];
+)
+
+/*
+Given tree:
+- x
+ - y
+  - z
+   - a
+- b
+Find the shortest distance between a & b
+*/
+fn sklExpCalcDistanceBetweenNodes a b =
+(
+	local dist;
+	if ( a.Children.Count > 0 ) then
+	(
+		-- Always -1 for branches
+		dist = -1;
+	)
+	else
+	(
+		local curNode = a.Parent;
+		local found = false;
+		dist = 0;
+		while ( curNode != undefined ) do
+		(
+			for c in curNode.Children do
+			(
+				if ( c == b ) then
+				(
+					found = true;
+					exit;
+				)
+			)
+			
+			if ( found ) then
+			(
+				exit;
+			)
+			else
+			(
+				dist += 1;
+				curNode = curNode.Parent;
+			)
+		)
+		
+		dist;
+	)
+)
+
+fn sklExpTransformMatrix m =
+(
+	m *= inverse (scalematrix [g_sklConfigScale, g_sklConfigScale, g_sklConfigScale]);
+	
+	if ( g_sklConfigConvertToZUP ) then
+	(
+		m *= Z_TO_Y_UP_MATRIX;
+	)
+	
+	m
+)
+
+fn sklExpCalcSkeletonInfoRecursive sklInfo maxBone curDepth Depth =
+(
+	if ( curDepth > sklInfo.MaxDepth ) then
+		sklInfo.MaxDepth = curDepth;
+	
+	local bInfo = sklExpBoneInfo();
+	bInfo.MaxBone = maxBone;
+	bInfo.Index = sklInfo.BoneInfo.Count;
+	bInfo.Depth = curDepth + 1;
+	bInfo.NextDistance = -1;
+	
+	local worldTfm = maxBone.Transform;	
+	bInfo.InvBindPoseMatrix = inverse (sklExpTransformMatrix worldTfm);
+	bInfo.LocalTransform = worldTfm;
+	if ( maxBone.Parent == undefined ) then
+	(
+		-- Transform only the root bone
+		bInfo.LocalTransform = sklExpTransformMatrix bInfo.LocalTransform;
+	)
+	
+	if ( maxBone.Parent != undefined ) then
+	(
+		-- Subtract parent's world transform from bone's transform
+		bInfo.LocalTransform *= inverse maxBone.Parent.Transform;
+	)
+	
+	append sklInfo.BoneInfo bInfo;
+	append sklInfo.NameLookup (sklExpBoneNameLookup BoneName:maxBone.Name Index:bInfo.Index)
+	
+	if ( bInfo.Index > 0 ) then
+	(
+		-- Link previous bone with current
+		local prev = sklInfo.BoneInfo[(bInfo.Index - 1) + 1]
+		prev.Next = bInfo;
+		prev.NextDistance = sklExpCalcDistanceBetweenNodes prev.MaxBone bInfo.MaxBone;
+	)
+	
+	for cb in maxBone.Children do
+		sklExpCalcSkeletonInfoRecursive sklInfo cb (curDepth + 1) (bInfo.Index + 1);
+)	
+
+fn sklExpCalcSkeletonInfo maxRootBone =
+(
+	local sklInfo = sklExpSkeletonInfo();
+	
+	if (maxRootBone != undefined) then
+	(
+		sklExpCalcSkeletonInfoRecursive sklInfo maxRootBone -1 0
+		
+		-- Link last & first bone end-to-end
+		local firstBInfo = sklInfo.BoneInfo[ 1 ];
+		local lastBInfo = sklInfo.BoneInfo[ sklInfo.BoneInfo.Count ];
+		lastBInfo.Next = firstBInfo;
+		lastBInfo.NextDistance = sklExpCalcDistanceBetweenNodes lastBInfo.MaxBone firstBInfo.MaxBone;
+	)
+	
+	sklInfo;
+)
+
+fn sklExpCompareNameLookup a b =
+(
+	if ( a.BoneName < b.BoneName ) then
+	(
+		-1
+	)
+	else if ( a.BoneName == b.BoneName ) then
+	(
+		0
+	)
+	else
+	(
+		1
+	)
+)
+
+fn sklImportFromFile filePath =
+(
+	local file = ioOpenFileRead( filePath );
+	sklImportFromStream file filePath;
 )
 
 fn sklImportFromStream file fileName =
@@ -124,16 +284,16 @@ fn sklImportFromStream file fileName =
 			)
 		)
 		
-        local maxBone = BoneSys.createBone tfm.row4 (tfm.row4 + 0.01 * (normalize tfm.row1)) (normalize tfm.row3);
-        maxBone.Name = boneName;
-        maxBone.Width  = 0.01;
-        maxBone.Height = 0.01;
-        maxBone.Transform = tfm;
-        maxBone.SetBoneEnable false 0;
-        maxBone.Wirecolor = yellow;
-        maxBone.Showlinks = true;
-        maxBone.Pos.Controller      = TCB_position();
-        maxBone.Rotation.Controller = TCB_rotation();
+		local maxBone = BoneSys.createBone tfm.row4 (tfm.row4 + 0.01 * (normalize tfm.row1)) (normalize tfm.row3);
+		maxBone.Name = boneName;
+		maxBone.Width  = 0.01;
+		maxBone.Height = 0.01;
+		maxBone.Transform = tfm;
+		maxBone.SetBoneEnable false 0;
+		maxBone.Wirecolor = yellow;
+		maxBone.Showlinks = true;
+		maxBone.Pos.Controller      = TCB_position();
+		maxBone.Rotation.Controller = TCB_rotation();
 			
 		if ( Depth > 0 ) then
 		(
@@ -150,177 +310,11 @@ fn sklImportFromStream file fileName =
 	sklEndProfile();
 )
 
-fn sklEncodeDataSize size =
-(
-	-- TODO
-	size;
-)
-
-struct sklMaxSkeletonInfo
-(
-	MaxDepth = -1,
-	BoneInfo = #(),
-	NameLookup = #()
-)
-
-struct sklMaxBoneInfo
-(
-	MaxBone,
-	Index,
-	Depth,
-	NameOffset,
-	Next,
-	NextDistance,
-	LocalTransform,
-	InvBindPoseMatrix
-)
-
-struct sklMaxBoneNameLookup
-(
-	BoneName,
-	Index
-)
-
-/*
-Given tree:
-- x
- - y
-  - z
-   - a
-- b
-Find the shortest distance between a & b
-*/
-fn sklCalcDistanceBetweenNodes a b =
-(
-	local dist;
-	if ( a.Children.Count > 0 ) then
-	(
-		-- Always -1 for branches
-		dist = -1;
-	)
-	else
-	(
-		local curNode = a.Parent;
-		local found = false;
-		dist = 0;
-		while ( curNode != undefined ) do
-		(
-			for c in curNode.Children do
-			(
-				if ( c == b ) then
-				(
-					found = true;
-					exit;
-				)
-			)
-			
-			if ( found ) then
-			(
-				exit;
-			)
-			else
-			(
-				dist += 1;
-				curNode = curNode.Parent;
-			)
-		)
-		
-		dist;
-	)
-)
-
-fn sklExpTransformMatrix m =
-(
-	m *= inverse (scalematrix [g_sklConfigScale, g_sklConfigScale, g_sklConfigScale]);
-	
-	if ( g_sklConfigConvertToZUP ) then
-	(
-		m *= Z_TO_Y_UP_MATRIX;
-	)
-	
-	m
-)
-
-fn sklCalcMaxSkeletonInfoRecursive sklInfo maxBone curDepth Depth =
-(
-	if ( curDepth > sklInfo.MaxDepth ) then
-		sklInfo.MaxDepth = curDepth;
-	
-	local bInfo = sklMaxBoneInfo();
-	bInfo.MaxBone = maxBone;
-	bInfo.Index = sklInfo.BoneInfo.Count;
-	bInfo.Depth = curDepth + 1;
-	bInfo.NextDistance = -1;
-	
-	local worldTfm = maxBone.Transform;	
-	bInfo.InvBindPoseMatrix = inverse (sklExpTransformMatrix worldTfm);
-	bInfo.LocalTransform = worldTfm;
-	if ( maxBone.Parent == undefined ) then
-	(
-		-- Transform only the root bone
-		bInfo.LocalTransform = sklExpTransformMatrix bInfo.LocalTransform;
-	)
-	
-	if ( maxBone.Parent != undefined ) then
-	(
-		-- Subtract parent's world transform from bone's transform
-		bInfo.LocalTransform *= inverse maxBone.Parent.Transform;
-	)
-	
-	append sklInfo.BoneInfo bInfo;
-	append sklInfo.NameLookup (sklMaxBoneNameLookup BoneName:maxBone.Name Index:bInfo.Index)
-	
-	if ( bInfo.Index > 0 ) then
-	(
-		-- Link previous bone with current
-		local prev = sklInfo.BoneInfo[(bInfo.Index - 1) + 1]
-		prev.Next = bInfo;
-		prev.NextDistance = sklCalcDistanceBetweenNodes prev.MaxBone bInfo.MaxBone;
-	)
-	
-	for cb in maxBone.Children do
-		sklCalcMaxSkeletonInfoRecursive sklInfo cb (curDepth + 1) (bInfo.Index + 1);
-)	
-
-fn sklCalcMaxSkeletonInfo maxRootBone =
-(
-	local sklInfo = sklMaxSkeletonInfo();
-	
-	if (maxRootBone != undefined) then
-	(
-		sklCalcMaxSkeletonInfoRecursive sklInfo maxRootBone -1 0
-		
-		-- Link last & first bone end-to-end
-		local firstBInfo = sklInfo.BoneInfo[ 1 ];
-		local lastBInfo = sklInfo.BoneInfo[ sklInfo.BoneInfo.Count ];
-		lastBInfo.Next = firstBInfo;
-		lastBInfo.NextDistance = sklCalcDistanceBetweenNodes lastBInfo.MaxBone firstBInfo.MaxBone;
-	)
-	
-	sklInfo;
-)
-
-fn sklCompareNameLookup a b =
-(
-	if ( a.BoneName < b.BoneName ) then
-	(
-		-1
-	)
-	else if ( a.BoneName == b.BoneName ) then
-	(
-		0
-	)
-	else
-	(
-		1
-	)
-)
-
 fn sklExportToStream file fileName =
 (
 	-- Collect data for export
 	local maxBones = for obj in objects where (classof obj == BoneGeometry) collect obj;
-	local sklInfo = sklCalcMaxSkeletonInfo maxBones[1];
+	local sklInfo = sklExpCalcSkeletonInfo maxBones[1];
 	
 	-- Start writing file
 	ioSetStream file fileName;
@@ -333,7 +327,7 @@ fn sklExportToStream file fileName =
 	-- Write bone names	
 	ioSeekSet( namesOffset );
 	ioWriteU8( 0 );
-	qsort sklInfo.NameLookup sklCompareNameLookup;
+	qsort sklInfo.NameLookup sklExpCompareNameLookup;
 	for i = 1 to sklInfo.NameLookup.Count do
 	(
 		sklInfo.BoneInfo[ sklInfo.NameLookup[i].Index + 1 ].NameOffset = ioTell();
