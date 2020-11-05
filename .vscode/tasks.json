@@ -1,0 +1,28 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "MXSPyCOM execute Script",
+        "type": "shell",
+        "command": "D:\\tools\\MXSPyCOM\\MXSPyCOM.exe",
+        "args": [
+          "-s",
+          {
+            "value": "${file}",
+            "quoting": "strong"
+          }
+        ],
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        },
+        "presentation": {
+          "echo": true,
+          "reveal": "silent",
+          "focus": false,
+          "panel": "shared"
+        },
+        "problemMatcher": []
+      }
+    ]
+}

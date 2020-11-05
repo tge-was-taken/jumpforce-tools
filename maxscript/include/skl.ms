@@ -12,6 +12,7 @@ Rivision History:
 */
 
 FileIn "io.ms"
+FileIn "utils.ms"
 
 SP2_RESOURCE_ITEM_FILE_HEADER_SIZE = 16
 SP2_MODEL_SKELETON_DATA_FILE_SIGNATURE = 0x24534B4C
@@ -19,9 +20,12 @@ SP2_MODEL_SKELETON_DATA_FILE_RESOURCE_INFO_SIZE = 0x40
 SP2_MODEL_SKELETON_DATA_FILE_HEADER_SIZE = 12
 SP2_MODEL_SKELETON_DATA_FILE_BONE_SIZE = 0x80
 
-global g_sklProfileTitle = undefined
-global g_sklProfileStartTime = 0
-global g_sklProfileEndTime = 0
+global g_sklConfigUseInverseBindPose = true;
+global g_sklConfigConvertToZUP = true;
+global g_sklConfigScale = 1000;
+global g_sklProfileTitle = undefined;
+global g_sklProfileStartTime = 0;
+global g_sklProfileEndTime = 0;
 
 fn sklEndProfile =
 (
@@ -43,6 +47,16 @@ fn sklImportFromFile filePath =
 (
 	local file = ioOpenFileRead( filePath );
 	sklImportFromStream file filePath;
+)
+
+fn sklImpTransformMatrix m =
+(
+	if ( g_sklConfigConvertToZUP ) then
+	(
+		m *= Y_TO_Z_UP_MATRIX;
+	)
+	
+	m *= scalematrix [g_sklConfigScale, g_sklConfigScale, g_sklConfigScale];
 )
 
 fn sklImportFromStream file fileName =
@@ -73,7 +87,8 @@ fn sklImportFromStream file fileName =
 	-- Read Sp2ModelSkeletonDataFileBone list
 	ioSeekSet( dataHeaderStart + bonesOffset );
 	local maxBones = #()
-	maxBones[boneCount] = undefined;
+	if ( boneCount > 0 ) then
+		maxBones[boneCount] = undefined;
 	
 	for i = 1 to boneCount do
 	(
@@ -83,8 +98,8 @@ fn sklImportFromStream file fileName =
 		local nextDistance = ioReadS8();
 		local type = ioReadS8();
 		local localTfm = ioReadMtx43LE();
-		local worldTfm = ioReadMtx43LE();
-		ioSeekCur( 24 ); -- Min, Max
+		local invBindPoseMatrix = ioReadMtx43LE();
+		ioSeekCur( 24 ); -- WorldTransform, Min, Max
 		
 		-- Read bone name
 		local tmp = ioTell();
@@ -94,11 +109,26 @@ fn sklImportFromStream file fileName =
 		--boneName = "i:" + (i - 1) as string + " p:" + Depth as string + " d:" + nextDistance as string + " " + boneName;
 		
 		-- Create bone
-        local maxBone = BoneSys.createBone worldTfm.row4 (worldTfm.row4 + 0.01 * (normalize worldTfm.row1)) (normalize worldTfm.row3);
+		local tfm;
+		if ( g_sklConfigUseInverseBindPose ) then
+		(
+			tfm = sklImpTransformMatrix (inverse invBindPoseMatrix);
+		)
+		else
+		(
+			tfm = localTfm;
+			if ( i == 1 ) then
+			(
+				-- Transform only the root, as the others are relative to it.
+				tfm = sklImpTransformMatrix tfm;
+			)
+		)
+		
+        local maxBone = BoneSys.createBone tfm.row4 (tfm.row4 + 0.01 * (normalize tfm.row1)) (normalize tfm.row3);
         maxBone.Name = boneName;
         maxBone.Width  = 0.01;
         maxBone.Height = 0.01;
-        maxBone.Transform = worldTfm;
+        maxBone.Transform = tfm;
         maxBone.SetBoneEnable false 0;
         maxBone.Wirecolor = yellow;
         maxBone.Showlinks = true;
@@ -108,6 +138,9 @@ fn sklImportFromStream file fileName =
 		if ( Depth > 0 ) then
 		(
 			maxBone.Parent = maxBones[ (depth - 1) + 1 ];
+			
+			if ( not g_sklConfigUseInverseBindPose ) then
+				maxBone.Transform *= maxBone.Parent.Transform;
 		)
 		
 		maxBones[(depth + 1) + 1] = undefined;
@@ -137,7 +170,9 @@ struct sklMaxBoneInfo
 	Depth,
 	NameOffset,
 	Next,
-	NextDistance
+	NextDistance,
+	LocalTransform,
+	InvBindPoseMatrix
 )
 
 struct sklMaxBoneNameLookup
@@ -194,6 +229,18 @@ fn sklCalcDistanceBetweenNodes a b =
 	)
 )
 
+fn sklExpTransformMatrix m =
+(
+	m *= inverse (scalematrix [g_sklConfigScale, g_sklConfigScale, g_sklConfigScale]);
+	
+	if ( g_sklConfigConvertToZUP ) then
+	(
+		m *= Z_TO_Y_UP_MATRIX;
+	)
+	
+	m
+)
+
 fn sklCalcMaxSkeletonInfoRecursive sklInfo maxBone curDepth Depth =
 (
 	if ( curDepth > sklInfo.MaxDepth ) then
@@ -204,6 +251,21 @@ fn sklCalcMaxSkeletonInfoRecursive sklInfo maxBone curDepth Depth =
 	bInfo.Index = sklInfo.BoneInfo.Count;
 	bInfo.Depth = curDepth + 1;
 	bInfo.NextDistance = -1;
+	
+	local worldTfm = maxBone.Transform;	
+	bInfo.InvBindPoseMatrix = inverse (sklExpTransformMatrix worldTfm);
+	bInfo.LocalTransform = worldTfm;
+	if ( maxBone.Parent == undefined ) then
+	(
+		-- Transform only the root bone
+		bInfo.LocalTransform = sklExpTransformMatrix bInfo.LocalTransform;
+	)
+	
+	if ( maxBone.Parent != undefined ) then
+	(
+		-- Subtract parent's world transform from bone's transform
+		bInfo.LocalTransform *= inverse maxBone.Parent.Transform;
+	)
 	
 	append sklInfo.BoneInfo bInfo;
 	append sklInfo.NameLookup (sklMaxBoneNameLookup BoneName:maxBone.Name Index:bInfo.Index)
@@ -223,13 +285,17 @@ fn sklCalcMaxSkeletonInfoRecursive sklInfo maxBone curDepth Depth =
 fn sklCalcMaxSkeletonInfo maxRootBone =
 (
 	local sklInfo = sklMaxSkeletonInfo();
-	sklCalcMaxSkeletonInfoRecursive sklInfo maxRootBone -1 0
 	
-	-- Link last & first bone end-to-end
-	local firstBInfo = sklInfo.BoneInfo[ 1 ];
-	local lastBInfo = sklInfo.BoneInfo[ sklInfo.BoneInfo.Count ];
-	lastBInfo.Next = firstBInfo;
-	lastBInfo.NextDistance = sklCalcDistanceBetweenNodes lastBInfo.MaxBone firstBInfo.MaxBone;
+	if (maxRootBone != undefined) then
+	(
+		sklCalcMaxSkeletonInfoRecursive sklInfo maxRootBone -1 0
+		
+		-- Link last & first bone end-to-end
+		local firstBInfo = sklInfo.BoneInfo[ 1 ];
+		local lastBInfo = sklInfo.BoneInfo[ sklInfo.BoneInfo.Count ];
+		lastBInfo.Next = firstBInfo;
+		lastBInfo.NextDistance = sklCalcDistanceBetweenNodes lastBInfo.MaxBone firstBInfo.MaxBone;
+	)
 	
 	sklInfo;
 )
@@ -254,8 +320,7 @@ fn sklExportToStream file fileName =
 (
 	-- Collect data for export
 	local maxBones = for obj in objects where (classof obj == BoneGeometry) collect obj;
-	local maxRootBone = maxBones[1];
-	local sklInfo = sklCalcMaxSkeletonInfo maxRootBone;
+	local sklInfo = sklCalcMaxSkeletonInfo maxBones[1];
 	
 	-- Start writing file
 	ioSetStream file fileName;
@@ -288,12 +353,10 @@ fn sklExportToStream file fileName =
 		ioWriteS8( bInfo.Depth );
 		ioWriteS8( bInfo.NextDistance );
 		ioWriteS8( 0 ); -- Type
-		ioWriteMtx43LE( bInfo.MaxBone.transform );
-		ioWriteMtx43LE( bInfo.MaxBone.objectTransform );
-		--ioWriteVec3LE( bInfo.MaxBone.min ); -- not even close
-		--ioWriteVec3LE( bInfo.MaxBone.max );
-		ioWriteVec3LE( [-3.141593, 3.141593, -3.141593] );
-		ioWriteVec3LE( [3.141593, -3.141593, 3.141593] );
+		ioWriteMtx43LE( bInfo.LocalTransform );
+		ioWriteMtx43LE( bInfo.InvBindPoseMatrix );
+		ioWriteVec3LE( [-3.141593, 3.141593, -3.141593] ); -- always constant. min extents/flip rot in rads?
+		ioWriteVec3LE( [3.141593, -3.141593, 3.141593] ); -- always constant. max extents/inverse flip rot?
 	)
 	
 	-- Write data header (Sp2ModelSkeletonDataFileHeader)
@@ -309,7 +372,7 @@ fn sklExportToStream file fileName =
 	ioWriteU32BE( SP2_MODEL_SKELETON_DATA_FILE_SIGNATURE );
 	ioWriteU32BE( fileSize - SP2_RESOURCE_ITEM_FILE_HEADER_SIZE );
 	ioWriteU32BE( SP2_MODEL_SKELETON_DATA_FILE_RESOURCE_INFO_SIZE );
-	ioWriteU32BE( 0 ); -- AdditionalHeaderCount
+	ioWriteU8( 0 ); -- AdditionalHeaderCount
 	ioWriteU8( 0 ); -- Field0D, unused
 	ioWriteU8( 0 ); -- Field0E, unused
 	ioWriteU8( 0 ); -- Field0F, unused
@@ -327,9 +390,9 @@ fn sklExportToFile filePath =
 )
 
 clearListener()
---with redraw off
+with redraw off
 (
-	--sklImportFromFile( @"D:\re\jumpforce\Samples\TypeD_SKELETON.skl" )
+	sklImportFromFile( @"D:\re\jumpforce\Samples\TypeD_SKELETON.skl" )
 	sklExportToFile("test.skl");
-	--sklImportFromFile( "test.skl" );
+	sklImportFromFile( "test.skl" );
 )

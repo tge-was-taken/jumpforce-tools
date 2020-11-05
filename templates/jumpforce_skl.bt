@@ -1,10 +1,10 @@
 //------------------------------------------------
 //--- 010 Editor v11.0 Binary Template
 //
-//      File: 
-//   Authors: 
-//   Version: 
-//   Purpose: 
+//      File: jumpforce_skl.bt
+//   Authors: TGE
+//   Version: 1.0
+//   Purpose: Parse SKL files
 //  Category: 
 // File Mask: 
 //  ID Bytes: 
@@ -24,14 +24,16 @@ typedef struct
     s8 NextDistance; // distance to next node
     s8 Type; // 5 possible types (0-5)
     f32 LocalTransform[3*4];
-    f32 WorldTransform[3*4];
-    TVector3 Min;
-    TVector3 Max;
+    f32 InverseBindMatrix[3*4];
+    TVector3 Min; // ?? flip rotation in rads?
+    TVector3 Max; // ?? inverse flip rotation in rads?
 
     local int Index = sklBoneIndex++;
     local string Name = ReadString( NameOffset + 0x10 );
 
-    Printf( "%s %d\n", Name, NextDistance );
+    //Printf( "%s %d\n", Name, NextDistance );
+    // OK Printf( "%d %02X\t%02X\t%01X\t%d\t%d\t%d\n", Index, NameOffset, Field02, Field04, Depth, NextDistance, Type );
+    //Printf( "%f\t%f\t%f\t%f\t%f\t%f\n", Min.X, Min.Y, Min.Z, Max.X, Max.Y, Max.Z);
 } Sp2ModelSkeletonDataFileBone <optimize=false>;
 
 typedef struct
