@@ -1,24 +1,44 @@
 global g_io_file = undefined
 global g_io_filePath = undefined
 
+fn ioSelectOpenFile caption filename types historyCategory =
+(
+	local filePath = getOpenFileName \
+		caption:caption \
+		filename:filename \
+		types:types \
+		historyCategory: historyCategory;
+	filePath
+)
+
+fn ioSelectSaveFile caption filename types historyCategory =
+(
+	local filePath = getSaveFileName \
+		caption:caption \
+		filename:filename \
+		types:types \
+		historyCategory: historyCategory;
+	filePath
+)
+
 fn ioOpenFileRead filePath =
 (
 	g_io_file = fopen filePath "rb";
-	g_io_filePath = filePath
-	g_io_file
+	g_io_filePath = filePath;
+	g_io_file;
 )
 
 fn ioOpenFileWrite filePath =
 (
 	g_io_file = fopen filePath "wb";
-	g_io_filePath = filePath
-	g_io_file
+	g_io_filePath = filePath;
+	g_io_file;
 )
 
-fn ioSetStream stream fileName =
+fn ioSetStream file fileName =
 (
-	g_io_file = stream
-	g_io_filePath = fileName
+	g_io_file = file;
+	g_io_filePath = fileName;
 )
 
 fn ioTell =

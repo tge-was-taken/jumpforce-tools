@@ -11,14 +11,14 @@ Rivision History:
 	
 */
 
-FileIn "io.ms"
-FileIn "utils.ms"
+FileIn "io.ms";
+FileIn "utils.ms";
 
-SP2_RESOURCE_ITEM_FILE_HEADER_SIZE = 16
-SP2_MODEL_SKELETON_DATA_FILE_SIGNATURE = 0x24534B4C
-SP2_MODEL_SKELETON_DATA_FILE_RESOURCE_INFO_SIZE = 0x40
-SP2_MODEL_SKELETON_DATA_FILE_HEADER_SIZE = 12
-SP2_MODEL_SKELETON_DATA_FILE_BONE_SIZE = 0x80
+SP2_RESOURCE_ITEM_FILE_HEADER_SIZE = 16;
+SP2_MODEL_SKELETON_DATA_FILE_SIGNATURE = 0x24534B4C;
+SP2_MODEL_SKELETON_DATA_FILE_RESOURCE_INFO_SIZE = 0x40;
+SP2_MODEL_SKELETON_DATA_FILE_HEADER_SIZE = 12;
+SP2_MODEL_SKELETON_DATA_FILE_BONE_SIZE = 0x80;
 
 global g_sklConfigUseInverseBindPose = true;
 global g_sklConfigConvertToZUP = true;
@@ -72,7 +72,7 @@ fn sklImpTransformMatrix m =
 (
 	if ( g_sklConfigConvertToZUP ) then
 	(
-		m *= Y_TO_Z_UP_MATRIX;
+		m *= UTIL_Y_TO_Z_UP_MATRIX;
 	)
 	
 	m *= scalematrix [g_sklConfigScale, g_sklConfigScale, g_sklConfigScale];
@@ -132,7 +132,7 @@ fn sklExpTransformMatrix m =
 	
 	if ( g_sklConfigConvertToZUP ) then
 	(
-		m *= Z_TO_Y_UP_MATRIX;
+		m *= UTIL_Z_TO_Y_UP_MATRIX;
 	)
 	
 	m
@@ -213,15 +213,9 @@ fn sklExpCompareNameLookup a b =
 	)
 )
 
-fn sklImportFromFile filePath =
-(
-	local file = ioOpenFileRead( filePath );
-	sklImportFromStream file filePath;
-)
-
 fn sklImportFromStream file fileName =
 (
-	sklBeginProfile("SKL Import")
+	sklBeginProfile("SKL Import");
 
 	ioSetStream file fileName;
 	
@@ -310,13 +304,21 @@ fn sklImportFromStream file fileName =
 	sklEndProfile();
 )
 
+fn sklImportFromFile filePath =
+(
+	local file = ioOpenFileRead( filePath );
+	sklImportFromStream file filePath;
+)
+
 fn sklExportToStream file fileName =
 (
 	-- Collect data for export
+	sklBeginProfile("SKL Export - Collecting scene data");
 	local maxBones = for obj in objects where (classof obj == BoneGeometry) collect obj;
 	local sklInfo = sklExpCalcSkeletonInfo maxBones[1];
 	
 	-- Start writing file
+	sklBeginProfile("SKL Export - Writing file");
 	ioSetStream file fileName;
 	
 	local fileStart = ioTell();
@@ -374,6 +376,7 @@ fn sklExportToStream file fileName =
 	-- Done
 	ioSeekSet( fileEnd );
 	ioWriteAlign( 16 );
+	sklEndProfile();
 )
 
 fn sklExportToFile filePath =
@@ -381,12 +384,4 @@ fn sklExportToFile filePath =
 	local file = ioOpenFileWrite( filePath );
 	sklExportToStream file filePath;
 	ioClose();
-)
-
-clearListener()
-with redraw off
-(
-	sklImportFromFile( @"D:\re\jumpforce\Samples\TypeD_SKELETON.skl" )
-	sklExportToFile("test.skl");
-	sklImportFromFile( "test.skl" );
 )
