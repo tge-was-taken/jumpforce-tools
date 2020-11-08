@@ -19,9 +19,9 @@ rollout jfImpExpGUI "Jump Force skeleton/animation importer" width:391 height:42
 	GroupBox 'grp2' "Animation" pos:[200,214] width:180 height:200 align:#left
 	button 'btnSklImp' "Import" pos:[26,373] width:70 height:28 align:#left
 	button 'btnSklExp' "Export" pos:[104,373] width:70 height:28 align:#left
-	checkbutton 'chkSklInvBind' "Use Inverse Bind Pose" pos:[25,300] width:152 height:25 checked:false align:#left
-	checkbutton 'chkSklZUp' "Convert to Z Up" pos:[25,264] width:152 height:25 enabled:true checked:true align:#left
-	spinner 'spnSklScale' "Scale" pos:[25,237] width:125 height:16 range:[0,100000,1000] align:#left
+	checkbutton 'chkSklInvBind' "Use Inverse Bind Pose" pos:[25,298] width:152 height:25 checked:false align:#left
+	checkbutton 'chkSklZUp' "Convert to Z Up" pos:[25,265] width:152 height:25 enabled:true checked:true align:#left
+	spinner 'spnSklScale' "Scale" pos:[25,237] width:125 height:16 range:[0,100000,100] align:#left
 	label 'lbl2' "Jump Force skeleton / animation importer v1.0 alpha" pos:[64,154] width:263 height:22 align:#left
 	label 'lbl3' "by TGE" pos:[279,176] width:40 height:22 align:#left
 	

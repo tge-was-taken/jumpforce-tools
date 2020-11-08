@@ -13,6 +13,7 @@ Rivision History:
 
 FileIn "io.ms";
 FileIn "utils.ms";
+FileIn "dbg.ms";
 
 SP2_RESOURCE_ITEM_FILE_HEADER_SIZE = 16;
 SP2_MODEL_SKELETON_DATA_FILE_SIGNATURE = 0x24534B4C;
@@ -20,9 +21,9 @@ SP2_MODEL_SKELETON_DATA_FILE_RESOURCE_INFO_SIZE = 0x40;
 SP2_MODEL_SKELETON_DATA_FILE_HEADER_SIZE = 12;
 SP2_MODEL_SKELETON_DATA_FILE_BONE_SIZE = 0x80;
 
-global g_sklConfigUseInverseBindPose = true;
+global g_sklConfigUseInverseBindPose = false;
 global g_sklConfigConvertToZUP = true;
-global g_sklConfigScale = 1000;
+global g_sklConfigScale = 100;
 global g_sklProfileTitle = undefined;
 global g_sklProfileStartTime = 0;
 global g_sklProfileEndTime = 0;
@@ -68,14 +69,43 @@ fn sklBeginProfile title =
 	g_sklProfileStartTime = timeStamp();
 )
 
+fn sklImpTransformMatrixScale m =
+(
+	m.translation *= [g_sklConfigScale, g_sklConfigScale, g_sklConfigScale];
+	m;
+)
+
 fn sklImpTransformMatrix m =
 (
+	-- Decompose
+	local t = m.translationpart;
+	local r = m.rotationpart;
+	local s = m.scalepart;
+	
 	if ( g_sklConfigConvertToZUP ) then
 	(
-		m *= UTIL_Y_TO_Z_UP_MATRIX;
+		local y = t.y;
+		t.x = -t.x;
+		t.y = -t.z;
+		t.z = y;
+		
+		y = r.y;
+		r.x = r.x;
+		r.y = r.z;
+		r.z = -y;
+		
+		-- scale is relative to 1
+		-- so make sure to subtract it before flipping
+		y = s.y;
+		s.x = (-(s.x - 1) + 1);
+		s.y = (-(s.z - 1) + 1);
+		s.z = y;
 	)
 	
-	m *= scalematrix [g_sklConfigScale, g_sklConfigScale, g_sklConfigScale];
+	m = r as matrix3;
+	m.translation = t * g_sklConfigScale;
+	m *= scalematrix s;
+	m;
 )
 
 /*
@@ -126,16 +156,38 @@ fn sklExpCalcDistanceBetweenNodes a b =
 	)
 )
 
-fn sklExpTransformMatrix m =
+-- inverted z & y compared to sklImpTransformMatrix
+fn sklExpTransformMatrix2 m =
 (
-	m *= inverse (scalematrix [g_sklConfigScale, g_sklConfigScale, g_sklConfigScale]);
+	-- Decompose
+	local t = m.translationpart;
+	local r = m.rotationpart;
+	local s = m.scalepart;
 	
 	if ( g_sklConfigConvertToZUP ) then
 	(
-		m *= UTIL_Z_TO_Y_UP_MATRIX;
+		local y = t.y;
+		t.x = -t.x;
+		t.y = t.z; 
+		t.z = -y;
+		
+		y = r.y;
+		r.x = r.x;
+		r.y = -r.z;
+		r.z = y;
+		
+		-- scale is relative to 1
+		-- so make sure to subtract it before flipping
+		y = s.y;
+		s.x = (-(s.x - 1) + 1);
+		s.y = ((s.z - 1) + 1);
+		s.z = (-(y - 1) + 1);
 	)
 	
-	m
+	m = r as matrix3;
+	m.translation = t / g_sklConfigScale;
+	m *= scalematrix s;
+	m;
 )
 
 fn sklExpCalcSkeletonInfoRecursive sklInfo maxBone curDepth Depth =
@@ -150,19 +202,22 @@ fn sklExpCalcSkeletonInfoRecursive sklInfo maxBone curDepth Depth =
 	bInfo.NextDistance = -1;
 	
 	local worldTfm = maxBone.Transform;	
-	bInfo.InvBindPoseMatrix = inverse (sklExpTransformMatrix worldTfm);
+	bInfo.InvBindPoseMatrix = inverse (sklExpTransformMatrix2 worldTfm);
 	bInfo.LocalTransform = worldTfm;
-	if ( maxBone.Parent == undefined ) then
-	(
-		-- Transform only the root bone
-		bInfo.LocalTransform = sklExpTransformMatrix bInfo.LocalTransform;
-	)
+	
+	--if ( maxBone.Parent == undefined ) then
+-- 	(
+-- 		-- Transform only the root bone
+-- 		bInfo.LocalTransform = sklExpTransformMatrix bInfo.LocalTransform;
+-- 	)
 	
 	if ( maxBone.Parent != undefined ) then
 	(
 		-- Subtract parent's world transform from bone's transform
-		bInfo.LocalTransform *= inverse maxBone.Parent.Transform;
+		bInfo.LocalTransform *= inverse ((maxBone.Parent.Transform));
 	)
+	
+	bInfo.LocalTransform = sklExpTransformMatrix2 bInfo.LocalTransform;
 	
 	append sklInfo.BoneInfo bInfo;
 	append sklInfo.NameLookup (sklExpBoneNameLookup BoneName:maxBone.Name Index:bInfo.Index)
@@ -240,9 +295,9 @@ fn sklImportFromStream file fileName =
 	
 	-- Read Sp2ModelSkeletonDataFileBone list
 	ioSeekSet( dataHeaderStart + bonesOffset );
-	local maxBones = #()
-	if ( boneCount > 0 ) then
-		maxBones[boneCount] = undefined;
+	local maxBones = #();
+	local boneOrigMtx = #();
+	if ( boneCount > 0 ) then maxBones[boneCount] = undefined;
 	
 	for i = 1 to boneCount do
 	(
@@ -260,22 +315,16 @@ fn sklImportFromStream file fileName =
 		ioSeekSet( dataHeaderStart + nameOffset );
 		local boneName = ioReadCString();
 		ioSeekSet( tmp );
-		--boneName = "i:" + (i - 1) as string + " p:" + Depth as string + " d:" + nextDistance as string + " " + boneName;
-		
+
 		-- Create bone
 		local tfm;
 		if ( g_sklConfigUseInverseBindPose ) then
 		(
-			tfm = sklImpTransformMatrix (inverse invBindPoseMatrix);
+			tfm = (inverse invBindPoseMatrix);
 		)
 		else
 		(
 			tfm = localTfm;
-			if ( i == 1 ) then
-			(
-				-- Transform only the root, as the others are relative to it.
-				tfm = sklImpTransformMatrix tfm;
-			)
 		)
 		
 		local maxBone = BoneSys.createBone tfm.row4 (tfm.row4 + 0.01 * (normalize tfm.row1)) (normalize tfm.row3);
@@ -291,14 +340,16 @@ fn sklImportFromStream file fileName =
 			
 		if ( Depth > 0 ) then
 		(
-			maxBone.Parent = maxBones[ (depth - 1) + 1 ];
+			local parentIdx = (depth - 1) + 1;
+			maxBone.Parent = maxBones[ parentIdx];
 			
 			if ( not g_sklConfigUseInverseBindPose ) then
-				maxBone.Transform *= maxBone.Parent.Transform;
+				maxBone.Transform *= boneOrigMtx[ parentIdx ];
 		)
 		
-		maxBones[(depth + 1) + 1] = undefined;
+		boneOrigMtx[ depth + 1 ] = maxBone.Transform;
 		maxBones[depth + 1] = maxBone;
+		maxBone.Transform = sklImpTransformMatrix maxBone.Transform;
 	)
 	
 	sklEndProfile();
@@ -385,3 +436,12 @@ fn sklExportToFile filePath =
 	sklExportToStream file filePath;
 	ioClose();
 )
+
+sklImportFromFile "D:\work\jumpforce_anim\Samples\chr0000.skl"
+--sklExportToFile "D:\work\jumpforce_anim\Samples\chr0000.exp.skl"
+--sklImportFromFile "D:\work\jumpforce_anim\Samples\chr0000.exp.skl"
+--sklImportFromFile "Nami.skl";
+--sklExportToFile "test.skl";
+--sklImportFromFile "test.skl";
+--clearListener()
+--dbgDumpBones();
