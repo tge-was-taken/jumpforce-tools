@@ -28,4 +28,9 @@ fn dbgDumpBones =
 	)	
 )
 
-dbgDumpBones();
+fn dbgPrintHex n v =
+(
+	print(n + " = 0x" + (bit.intAsHex v))
+)
+
+--dbgDumpBones();

@@ -71,6 +71,7 @@ typedef struct
     FSeek( start + NamesOffset );
     struct { Sp2ModelSkeletonDataFileBoneName BoneNames[BoneCount + 1]; } BoneNames;
 } Sp2ModelSkeletonDataFileHeader;
+
 typedef struct
 {
     Sp2ResourceItemFileHeader Header;

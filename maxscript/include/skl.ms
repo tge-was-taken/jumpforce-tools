@@ -14,8 +14,8 @@ Rivision History:
 FileIn "io.ms";
 FileIn "utils.ms";
 FileIn "dbg.ms";
+FileIn "sp2.ms";
 
-SP2_RESOURCE_ITEM_FILE_HEADER_SIZE = 16;
 SP2_MODEL_SKELETON_DATA_FILE_SIGNATURE = 0x24534B4C;
 SP2_MODEL_SKELETON_DATA_FILE_RESOURCE_INFO_SIZE = 0x40;
 SP2_MODEL_SKELETON_DATA_FILE_HEADER_SIZE = 12;
@@ -69,43 +69,9 @@ fn sklBeginProfile title =
 	g_sklProfileStartTime = timeStamp();
 )
 
-fn sklImpTransformMatrixScale m =
-(
-	m.translation *= [g_sklConfigScale, g_sklConfigScale, g_sklConfigScale];
-	m;
-)
-
 fn sklImpTransformMatrix m =
 (
-	-- Decompose
-	local t = m.translationpart;
-	local r = m.rotationpart;
-	local s = m.scalepart;
-	
-	if ( g_sklConfigConvertToZUP ) then
-	(
-		local y = t.y;
-		t.x = -t.x;
-		t.y = -t.z;
-		t.z = y;
-		
-		y = r.y;
-		r.x = r.x;
-		r.y = r.z;
-		r.z = -y;
-		
-		-- scale is relative to 1
-		-- so make sure to subtract it before flipping
-		y = s.y;
-		s.x = (-(s.x - 1) + 1);
-		s.y = (-(s.z - 1) + 1);
-		s.z = y;
-	)
-	
-	m = r as matrix3;
-	m.translation = t * g_sklConfigScale;
-	m *= scalematrix s;
-	m;
+	Sp2ImportTransformMatrix m g_sklConfigConvertToZUP g_sklConfigScale;
 )
 
 /*
@@ -159,35 +125,7 @@ fn sklExpCalcDistanceBetweenNodes a b =
 -- inverted z & y compared to sklImpTransformMatrix
 fn sklExpTransformMatrix2 m =
 (
-	-- Decompose
-	local t = m.translationpart;
-	local r = m.rotationpart;
-	local s = m.scalepart;
-	
-	if ( g_sklConfigConvertToZUP ) then
-	(
-		local y = t.y;
-		t.x = -t.x;
-		t.y = t.z; 
-		t.z = -y;
-		
-		y = r.y;
-		r.x = r.x;
-		r.y = -r.z;
-		r.z = y;
-		
-		-- scale is relative to 1
-		-- so make sure to subtract it before flipping
-		y = s.y;
-		s.x = (-(s.x - 1) + 1);
-		s.y = ((s.z - 1) + 1);
-		s.z = (-(y - 1) + 1);
-	)
-	
-	m = r as matrix3;
-	m.translation = t / g_sklConfigScale;
-	m *= scalematrix s;
-	m;
+	Sp2ExportTransformMatrix m g_sklConfigConvertToZUP g_sklConfigScale;
 )
 
 fn sklExpCalcSkeletonInfoRecursive sklInfo maxBone curDepth Depth =
@@ -204,12 +142,6 @@ fn sklExpCalcSkeletonInfoRecursive sklInfo maxBone curDepth Depth =
 	local worldTfm = maxBone.Transform;	
 	bInfo.InvBindPoseMatrix = inverse (sklExpTransformMatrix2 worldTfm);
 	bInfo.LocalTransform = worldTfm;
-	
-	--if ( maxBone.Parent == undefined ) then
--- 	(
--- 		-- Transform only the root bone
--- 		bInfo.LocalTransform = sklExpTransformMatrix bInfo.LocalTransform;
--- 	)
 	
 	if ( maxBone.Parent != undefined ) then
 	(
@@ -437,7 +369,7 @@ fn sklExportToFile filePath =
 	ioClose();
 )
 
-sklImportFromFile "D:\work\jumpforce_anim\Samples\chr0000.skl"
+--sklImportFromFile "D:\work\jumpforce_anim\Samples\chr0000.skl"
 --sklExportToFile "D:\work\jumpforce_anim\Samples\chr0000.exp.skl"
 --sklImportFromFile "D:\work\jumpforce_anim\Samples\chr0000.exp.skl"
 --sklImportFromFile "Nami.skl";

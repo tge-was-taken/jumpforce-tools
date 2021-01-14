@@ -1,0 +1,246 @@
+//------------------------------------------------
+//--- 010 Editor v11.0 Binary Template
+//
+//      File: jumpforce_anm.bt
+//   Authors: TGE
+//   Version: 1.0
+//   Purpose: Parse ANM files
+//  Category: 
+// File Mask: 
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+
+#include "common/include.h"
+
+typedef struct 
+{
+    BigEndian();
+    u32 Signature; 
+    u32 DataSize; // size of data after headers
+    u32 ResourceItemSize; // size of Sp2ResourceItem (RSI) following the data
+    u8 AdditionalHeaderCount; // item size: 16. used to seek to data.
+    u8 Field0D; // unused
+    u8 Field0E; // unused 
+    u8 ResourceItemCount;
+    LittleEndian();
+} Sp2ResourceItemFileHeader <bgcolor=0x35c486, optimize=false>;
+
+typedef struct
+{
+    local u64 p = FTell();
+    u32 Field00; // 0xFF0506, unused? not referenced in Sp2ResourceItem::Read
+    u16 StringCount; // no. of strings to hash?
+    u16 RelocationCount; // no. of relocations
+    u16 StringTableOffset; // table of string offsets
+    u16 RelocationTableOffset; // offset to relocation table
+    u32 NameOffset; // name of the resource
+
+    FSeek( p + NameOffset );
+    string Name;
+} Sp2ResourceItemFileDataHeader <bgcolor=0x67a255>;
+
+typedef struct
+{
+    local u64 p = FTell();
+    Sp2ResourceItemFileHeader Header;
+    local u64 pEnd = FTell();
+
+    FSeek( p + (1 + Header.AdditionalHeaderCount) * 16 );
+    Sp2ResourceItemFileDataHeader DataHeader;
+    FSeek( Align( pEnd + Header.DataSize, 16 ) ); 
+} Sp2ResourceItemFile;
+
+typedef struct
+{
+    u64 Cmp;
+} Sp2CompressedRotation <read=Sp2CompressedRotationToString>;
+
+string Sp2CompressedRotationToString(Sp2CompressedRotation& q)
+{
+    local u64 cmp = q.Cmp;
+    local byte control = cmp >> 60;
+    local float a = (float)((float)((float)(cmp & 0xFFFFF) * 0.00000095367523) - 0.5) * 1.4142135;
+    local float b = (float)((float)((float)((cmp >> 20) & 0xFFFFF) * 0.00000095367523) - 0.5) * 1.4142135;
+    local float c = (float)((float)((float)((cmp >> 40) & 0xFFFFF) * 0.00000095367523) - 0.5) * 1.4142135;
+    
+    local float decX = a;
+    local float decY = b;
+    local float decZ = c;
+    local float decW = 0.0;
+
+    local float lengthSq = 0.0;
+    local float length = 1.0 - (float)((float)((float)(a * a) + (float)(b * b)) + (float)(c * c));
+    if ( length > 0.0 )
+        lengthSq = Sqrt(length);
+
+    switch ( control )
+    {
+    case 0:
+      decY = a;
+    case 1:
+      decZ = b;
+    case 2:
+      decW = c;
+      break;
+    }
+
+    switch ( control )
+    {
+    case 0:
+        decX = lengthSq;
+        break;
+
+    case 1:
+        decY = lengthSq;
+        break;
+
+    case 2:
+        decZ = lengthSq;
+        break;
+
+    case 3:
+        decW = lengthSq;
+        break;
+
+    default:
+        Assert(false);
+        break;
+    }
+
+    string s = "";
+    SPrintf( s, "[%f, %f, %f, %f] control=%d length:%f", decX, decY, decZ, decW, control, lengthSq );
+    return s;
+}
+
+typedef struct( u64 p )
+{
+    SetRandomBackColor();
+    u32 NameOffset;
+    u32 TranslationKeyCount;
+    u32 RotationKeyCount;
+    u32 ScaleKeyCount;
+    u32 TranslationKeyTimesOffset;
+    u32 RotationKeyTimesOffset;
+    u32 ScaleKeyTimesOffset;
+    u32 TranslationKeysOffset;
+    u32 RotationKeysOffset;
+    u32 ScaleKeysOffset;
+
+    local u64 next = FTell();
+    FSeek( p + NameOffset );
+    string Name;
+
+    if ( TranslationKeyCount )
+    {
+        FSeek( p + TranslationKeyTimesOffset );
+        f32 TranslationKeyTimes[ TranslationKeyCount ];
+
+        FSeek( p + TranslationKeysOffset );
+        TVector4 TranslationKeyValues[ TranslationKeyCount ];
+    }
+
+    if ( RotationKeyCount ) 
+    {
+        FSeek( p + RotationKeyTimesOffset );
+        f32 RotationKeyTimes[ RotationKeyCount ];
+
+        FSeek( p + RotationKeysOffset );
+        Sp2CompressedRotation RotationKeyValues[ RotationKeyCount ];
+    }
+
+    if ( ScaleKeyCount )
+    {
+        FSeek( p + ScaleKeyTimesOffset );
+        f32 ScaleKeyTimes[ ScaleKeyCount ];
+
+        FSeek( p + ScaleKeysOffset );
+        TVector4 ScaleKeyValues[ ScaleKeyCount ];
+    }
+
+    FSeek( next );
+} Sp2ModelAnimationDataPRSController <bgcolor=0x84773e, optimize=false>;
+
+typedef struct( u64 p )
+{
+    SetRandomBackColor();
+    u32 NameOffset;
+    u32 Field04;
+    u32 KeyCount;
+    u32 KeyTimesOffset;
+    u32 KeyValuesOffset;
+
+    local u64 next = FTell();
+    FSeek( p + NameOffset );
+    string Name;
+
+    if ( KeyCount )
+    {
+        FSeek( p + KeyTimesOffset );
+        f32 KeyTimes[ KeyCount ];
+
+        FSeek( p + KeyValuesOffset );
+        f32 KeyValues[ KeyCount ];
+    }
+
+    FSeek( next );
+} Sp2ModelAnimationDataCamFovController <bgcolor=0x84773e, optimize=false>;
+
+typedef struct
+{
+    local u64 p = FTell();
+    u32 Field00; // ? 4
+    f32 Duration; // duration of the animation
+    u32 BoneControllersOffset; // skeletal animation
+    u32 AttachControllersOffset; // animation of equipped items
+    u32 CamControllersOffset; // camera animation
+    u32 UnkControllersOffset; // ?
+    u32 CamFovControllersOffset; // camera FOV animation
+    u16 BoneControllerCount;
+    u16 AttachControllerCount;
+    u16 CamControllerCount;
+    u16 UnkControllerCount;
+    u16 CamFovControllerCount;
+    local u64 next = FTell();
+
+    FSeek( p + BoneControllersOffset ); 
+    Sp2ModelAnimationDataPRSController BoneControllers( p )[ BoneControllerCount ];    
+
+    FSeek( p + AttachControllersOffset ); 
+    Sp2ModelAnimationDataPRSController AttachControllers( p )[ AttachControllerCount ];   
+
+    FSeek( p + CamControllersOffset ); 
+    Sp2ModelAnimationDataPRSController CamControllers( p )[ CamControllerCount ];   
+
+    FSeek( p + UnkControllersOffset ); 
+    Sp2ModelAnimationDataPRSController UnkControllers( p )[ UnkControllerCount ];   
+
+    FSeek( p + CamFovControllersOffset ); 
+    Sp2ModelAnimationDataCamFovController CamFovControllers( p )[ CamFovControllerCount ];  
+
+    FSeek( next ); 
+} Sp2ModelAnimationDataFileHeader <optimize=false, bgcolor=0xcaa4e1>;
+
+typedef struct
+{
+    Sp2ResourceItemFileHeader ResourceFileHeader;
+
+    local u64 p = FTell();
+    Sp2ResourceItemFileHeader Header;
+    local u64 pEnd = FTell();
+
+    FSeek( p + (1 + Header.AdditionalHeaderCount) * 16 );
+    Sp2ModelAnimationDataFileHeader Data;
+
+    if ( Header.ResourceItemSize > 0 )
+    {
+        local u64 next = FTell();
+        FSeek( Align( pEnd + Header.DataSize, 16 ) );
+        struct Sp2ResourceItemFile ResourceItem;
+    }
+
+    Sp2ResourceItemFileHeader ResourceItemTerminator;
+    Sp2ResourceItemFileHeader ResoureFileTerminator; 
+} Sp2ModelAnimationDataFile;
+
+Sp2ModelAnimationDataFile File;

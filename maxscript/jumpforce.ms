@@ -10,67 +10,160 @@ Rivision History:
 	- first public release
 */
 
-FileIn "include/skl.ms"
+FileIn "include/controller.ms"
 
-rollout jfImpExpGUI "Jump Force skeleton/animation importer" width:391 height:425
+global g_jfController = JfController();
+global g_jfFloater;
+global g_jfRollouts = undefined;
+
+fn jfHandleFileAction filePath action =
 (
-	bitmap 'bmp1' "Bitmap" pos:[45,31] width:300 height:100 fileName:"logo.png" align:#left
-	GroupBox 'grp1' "Skeleton" pos:[10,214] width:180 height:200 align:#left
-	GroupBox 'grp2' "Animation" pos:[200,214] width:180 height:200 align:#left
-	button 'btnSklImp' "Import" pos:[26,373] width:70 height:28 align:#left
-	button 'btnSklExp' "Export" pos:[104,373] width:70 height:28 align:#left
-	checkbutton 'chkSklInvBind' "Use Inverse Bind Pose" pos:[25,298] width:152 height:25 checked:false align:#left
-	checkbutton 'chkSklZUp' "Convert to Z Up" pos:[25,265] width:152 height:25 enabled:true checked:true align:#left
-	spinner 'spnSklScale' "Scale" pos:[25,237] width:125 height:16 range:[0,100000,100] align:#left
-	label 'lbl2' "Jump Force skeleton / animation importer v1.0 alpha" pos:[64,154] width:263 height:22 align:#left
-	label 'lbl3' "by TGE" pos:[279,176] width:40 height:22 align:#left
-	
-	fn updateSklConfig =
+	local result = undefined;
+	if ( filePath != undefined ) then
 	(
-		g_sklConfigUseInverseBindPose = chkSklInvBind.checked;
-		g_sklConfigConvertToZUP = chkSklZUp.checked;
-		g_sklConfigScale = spnSklScale.value;
-	)
-	
-	fn handleFileAction filePath action =
-	(
-		if ( filePath != undefined ) then
+		with redraw off
 		(
-			with redraw off
+			--try 
+			( 
+				result = action( filePath ); 
+			) 
+			--catch 
 			(
-				try 
-				( 
-					action( filePath ); 
-				) 
-				catch 
-				(
-					utilHandleException();
-				)
+				--utilHandleException();
 			)
 		)
 	)
 	
-	on btnSklImp pressed do
+	result;
+)
+
+rollout jfInfoRollout "Jump Force Importer/Exporter"
+(
+	label lblVersion "Version 0.7 alpha" align:#center
+	label lblAuthor "© 2020-2021 TGE" align:#center
+)
+
+rollout jfSettingsRollout "Settings"
+(
+	checkbox chkConvertToZUp "Convert to Z Up" checked:true align:#left;
+	spinner spnScale "Scale" range:[0,1000000,100] align:#left;
+	
+	on chkConvertToZUp changed state do g_jfController.ConvertToZUp = state;
+	on spnScale changed state do g_jfController.GlobalScale = state;
+)
+
+rollout jfSklRollout "Skeleton" width:162 height:300
+(
+	checkbox chkUseInvBindPose "Use Inverse Bind Pose" checked:false align:#left;
+	button btnImport "Import" align:#center across:2;
+	button btnExport "Export" align:#center;
+	
+	on chkUseInvBindPose changed state do g_jfController.UseInverseBindPose = state;
+	
+	on btnImport pressed do
 	(
-		updateSklConfig();
 		local filePath = getOpenFileName \
-			caption:"Open a SKL file" \
-			filename:"test.skl" \
+			caption:"Open a skeleton file" \
+			filename:"" \
 			types:"Jump Force Skeleton Files (*.skl)|*.skl" \
 			historyCategory: "JfSklImp";
-		handleFileAction filePath sklImportFromFile;
+		jfHandleFileAction filePath g_jfController.ImportSkl;
 	)
-	on btnSklExp pressed do
+	
+	on btnExport pressed do
 	(
-		updateSklConfig();
 		local filePath = getSaveFileName \
-			caption:"Save a SKL file" \
-			filename:"test.skl" \
+			caption:"Save a skeleton file" \
+			filename:"" \
 			types:"Jump Force Skeleton Files (*.skl)|*.skl" \
 			historyCategory: "JfSklExp";
-		
-		handleFileAction filePath sklExportToFile;
+		jfHandleFileAction filePath g_jfController.ExportSkl;
 	)
 )
 
-CreateDialog jfImpExpGUI
+rollout jfAnmRollout "Animation" width:162 height:300
+(
+	spinner spnSpeed "Speed" range:[0,1000000,1] align:#left width:100;
+	edittext edtName "Name";
+	button btnSaveBasePose "Save base pose" across:2;
+	button btnLoadBasePose "Restore base pose" enabled:false;
+	button btnImport "Import" align:#center across:2;
+	button btnExport "Export" align:#center;
+	
+	on spnSpeed changed state do g_jfController.PlaybackSpeed = state;
+	
+	on btnSaveBasePose pressed do
+	(
+		g_jfController.SaveBasePose();
+		btnLoadBasePose.enabled = true;
+	)
+	
+	on btnLoadBasePose pressed do
+	(
+		g_jfController.RestoreBasePose();
+	)
+	
+	on btnImport pressed do
+	(
+		local filePath = getOpenFileName \
+			caption:"Open an animation file" \
+			filename:"" \
+			types:"Jump Force Animation Files (*.san;*.anm)|*.san;*.anm" \
+			historyCategory: "JfSanImp";
+		
+		if ( filePath != undefined ) then
+		(
+			local resourceFile = jfHandleFileAction filePath g_jfController.ImportSan;
+			local animation = resourceFile.ResourceItems[1];
+			local name = animation.ResourceItem.Data.Name;
+			if ( name != undefined ) then
+				edtName.text = name;
+			
+			btnLoadBasePose.enabled = true;
+		)
+	)
+	
+	on btnExport pressed do
+	(
+		local filePath = getSaveFileName \
+			caption:"Save an animation file" \
+			filename:"" \
+			types:"Jump Force Animation Files (*.san)|*.san" \
+			historyCategory: "JfSanExp";
+		jfHandleFileAction filePath g_jfController.ExportSan;
+	)
+)
+
+fn main =
+(
+	-- adapted from ActorXImporter by Gildor
+	-- request position of previous window, if it was already opened
+	local x = 30;
+	local y = 100;
+	local w = 250;
+	local h = 700;
+	
+	if ( g_jfFloater != undefined ) then
+	(
+		x = g_jfFloater.pos.x;
+		y = g_jfFloater.pos.y;
+		w = g_jfFloater.size.x;
+		h = g_jfFloater.size.y;
+		
+		-- close old window
+		closeRolloutFloater g_jfFloater;
+	)
+	-- Create plugin window
+	g_jfFloater = newRolloutFloater "JF Plugin" w h x y -- create a new window
+
+	-- init axRolloutList
+	g_jfRollouts = #(jfInfoRollout, jfSettingsRollout, jfSklRollout, jfAnmRollout);
+
+	-- add controls
+	for i = 1 to g_jfRollouts.count do
+	(
+		addRollout g_jfRollouts[i] g_jfFloater;
+	)
+)
+
+main();

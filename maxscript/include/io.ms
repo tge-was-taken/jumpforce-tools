@@ -66,6 +66,11 @@ fn ioSeekCur pos =
 	FSeek g_io_file pos #seek_cur
 )
 
+fn ioSeekEnd pos = 
+(
+	FSeek g_io_file pos #seek_end; 
+)
+
 fn ioClose =
 (
 	FClose g_io_file
@@ -363,4 +368,9 @@ fn ioWriteAlign align =
 	(
 		WriteByte g_io_file 0
 	)
+)
+
+fn ioWriteZeroFill count =
+(
+	for i = 1 to count do WriteByte g_io_file 0;
 )
