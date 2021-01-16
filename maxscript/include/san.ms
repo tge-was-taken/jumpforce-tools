@@ -14,6 +14,8 @@ Rivision History:
 FileIn "sp2.ms";
 
 SP2_MODEL_ANIMATION_DATA_HEADER_SIGNATURE = 0x24414E4D;
+SP2_MODEL_ANIMATION_DATA_EX_CONTROLLER_TYPE_VIS = 0;
+SP2_MODEL_ANIMATION_DATA_EX_CONTROLLER_TYPE_FOV = 1;
 
 fn Sp2CalcVector3LengthSquared x y z =
 (
@@ -191,15 +193,16 @@ fn Sp2ModelAnimationDataDecompressRotation cmp =
     local dec = quat decX decY decZ decW;
 )
 
-struct Sp2ModelAnimationDataCamFovController
+struct Sp2ModelAnimationDataExController
 (
-	fn GetStructSize = 20,
+	fn GetStructSize = 24,
 		
 	NameOffset = 0,
-	Field04 = 0,
+	SubType = 0,
 	KeyCount = 0,
 	KeyTimesOffset = 0,
 	KeyValuesOffset = 0,
+	BaseValue = 0,
 	--
 	Name = "",
 	KeyTimes = #(),
@@ -208,10 +211,12 @@ struct Sp2ModelAnimationDataCamFovController
 	fn Read ctx = 
 	(
 		NameOffset = ioReadU32LE();
-		Field04 = ioReadU32LE();
+		SubType = ioReadU32LE();
 		KeyCount = ioReadU32LE();
 		KeyTimesOffset = ioReadU32LE();
 		KeyValuesOffset = ioReadU32LE();
+		BaseValue = ioReadF32LE();
+		
 		local next = ioTell();
 		
         ioSeekSet( ctx.BaseOffset + NameOffset );
@@ -237,10 +242,12 @@ struct Sp2ModelAnimationDataCamFovController
 	fn EndWrite ctx =
 	(
         ioWriteU32LE( NameOffset );
-        ioWriteU32LE( Field04 );
+        ioWriteU32LE( SubType );
         ioWriteU32LE( KeyCount );
         ioWriteU32LE( KeyTimesOffset );
         ioWriteU32LE( KeyValuesOffset );
+		ioWriteF32LE( BaseValue );
+		
 		local structEnd = ioTell();
 		
 		ioSeekSet( ctx.BaseOffset + NameOffset );
@@ -324,21 +331,7 @@ struct Sp2ModelAnimationDataTrsController
 			for i = 1 to RotationKeyCount do 
 			(
 				local cmp = ioReadU64LE();
-				local dec = Sp2ModelAnimationDataDecompressRotation( cmp );
-/* 				local newCmp = Sp2ModelAnimationDataCompressRotation dec;
-* 				local newDec = Sp2ModelAnimationDataDecompressRotation newCmp;
-* 				if ( not ( close_enough dec.x newDec.x 10 and \
-* 						   close_enough dec.y newDec.y 10 and \
-* 						   close_enough dec.z newDec.z 10 and \
-* 						   close_enough dec.w newDec.w 10 ) ) then
-* 				(
-* 					print ( "o:" + (bit.intAsHex cmp));
-* 					print ( "n:" + (bit.intAsHex newCmp));
-* 					print ( "decoded o:" + (Sp2ModelAnimationDataDecompressRotation(cmp)) as string);
-* 					print ( "decoded n:" + (Sp2ModelAnimationDataDecompressRotation(newCmp)) as string);
-* 				)
-*/
-				
+				local dec = Sp2ModelAnimationDataDecompressRotation( cmp );				
 				RotationKeyValues[i] = dec;
 			)
 		)
@@ -416,7 +409,7 @@ struct Sp2ModelAnimationDataTrsController
 			ioSeekSet( ctx.BaseOffset + ScaleKeyValuesOffset );
 			for i = 1 to ScaleKeyCount do 
 			(
-				local val = ScaleKeyValuesOffset[i];
+				local val = ScaleKeyValues[i];
 				ioWriteF32LE val.X;
 				ioWriteF32LE val.Y;
 				ioWriteF32LE val.Z;
@@ -486,18 +479,18 @@ struct Sp2ModelAnimationDataFileHeader
     AttachControllersOffset = 0,
     CamControllersOffset = 0,
     UnkControllersOffset = 0,
-    CamFovControllersOffset = 0,
+    ExControllersOffset = 0,
     BoneControllerCount = 0,
     AttachControllerCount = 0,
     CamControllerCount = 0,
     UnkControllerCount = 0,
-    CamFovControllerCount = 0,
+    ExControllerCount = 0,
     --
     BoneControllers = #(),
     AttachControllers = #(),
     CamControllers = #(),
     UnkControllers = #(),
-    CamFovControllers = #(),
+    ExControllers = #(),
 	
 	fn GetTrsControllers =
 	(
@@ -521,7 +514,7 @@ struct Sp2ModelAnimationDataFileHeader
         list;
     ),
 	
-    fn ReadCamFovControllers ctx offset count =
+    fn ReadExControllers ctx offset count =
     (
 		local list = #();
 		if ( count > 0 ) then
@@ -530,7 +523,7 @@ struct Sp2ModelAnimationDataFileHeader
 			list[count] = undefined;
 			for i = 1 to count do
 			(
-				local anim = Sp2ModelAnimationDataCamFovController();
+				local anim = Sp2ModelAnimationDataExController();
 				anim.Read ctx;
 				list[i] = anim;
 			)
@@ -547,19 +540,19 @@ struct Sp2ModelAnimationDataFileHeader
         AttachControllersOffset = ioReadU32LE();
         CamControllersOffset = ioReadU32LE();
         UnkControllersOffset = ioReadU32LE();
-        CamFovControllersOffset = ioReadU32LE();
+        ExControllersOffset = ioReadU32LE();
         BoneControllerCount = ioReadU16LE();
         AttachControllerCount = ioReadU16LE();
         CamControllerCount = ioReadU16LE();
         UnkControllerCount = ioReadU16LE();
-        CamFovControllerCount = ioReadU16LE();
+        ExControllerCount = ioReadU16LE();
 		local next = ioTell();
 
         BoneControllers = ReadTrsControllers ctx BoneControllersOffset BoneControllerCount;
         AttachControllers = ReadTrsControllers ctx AttachControllersOffset AttachControllerCount;
         CamControllers = ReadTrsControllers ctx CamControllersOffset CamControllerCount;
         UnkControllers = ReadTrsControllers ctx UnkControllersOffset UnkControllerCount;
-        CamFovControllers = ReadCamFovControllers ctx CamFovControllersOffset CamFovControllerCount;
+        ExControllers = ReadExControllers ctx ExControllersOffset ExControllerCount;
 		
 		ioSeekSet( next );
 		ctx.PopBaseOffset();
@@ -599,7 +592,7 @@ struct Sp2ModelAnimationDataFileHeader
 		AttachControllerCount = AttachControllers.Count;
 		CamControllerCount = CamControllers.Count;
 		UnkControllerCount = UnkControllers.Count;
-		CamFovControllerCount = CamFovControllers.Count;
+		ExControllerCount = ExControllers.Count;
 		
 		-- fill in offsets
 		ctx.PushBaseOffset();
@@ -636,11 +629,11 @@ struct Sp2ModelAnimationDataFileHeader
 			dataCursor += Sp2ModelAnimationDataTrsController.GetStructSize() * UnkControllers.Count;
 		)
 		
-		if ( CamFovControllers.Count > 0 ) then
+		if ( ExControllers.Count > 0 ) then
 		(
 			dataCursor = (ioAlign dataCursor 16);
-			CamFovControllersOffset = dataCursor - ctx.BaseOffset;
-			dataCursor += Sp2ModelAnimationDataCamFovController.GetStructSize() * CamFovControllers.Count;
+			ExControllersOffset = dataCursor - ctx.BaseOffset;
+			dataCursor += Sp2ModelAnimationDataExController.GetStructSize() * ExControllers.Count;
 		)
 		
 		local trsControllers = GetTrsControllers();
@@ -659,7 +652,7 @@ struct Sp2ModelAnimationDataFileHeader
 			)
 		)
 		
-		for ctrl in CamFovControllers do append sortedNames #( ctrl.Name, ctrl );
+		for ctrl in ExControllers do append sortedNames #( ctrl.Name, ctrl );
 		
 		
 		qsort sortedNames BoneAnimNameCompare;
@@ -726,21 +719,6 @@ struct Sp2ModelAnimationDataFileHeader
 			)
 			
 		)
-		
-		for i = 1 to CamFovControllers.Count do
-		(
-			local list = CamFovControllers[i].KeyValues;
-			local offset = objectOffsetDict.GetListOffset list;
-			if ( offset == -1 ) then
-			(
-				dataCursor = (ioAlign dataCursor 16);
-				offset = dataCursor - ctx.BaseOffset;
-				dataCursor += (4 * list.Count);
-				objectOffsetDict.AddListOffset list offset;
-			)
-			
-			CamFovControllers[i].KeyValuesOffset = offset;
-		)
 			
 		for i = 1 to trsControllers.Count do
 		(
@@ -796,9 +774,9 @@ struct Sp2ModelAnimationDataFileHeader
 			)
 		)
 		
-		for i = 1 to CamFovControllers.Count do
+		for i = 1 to ExControllers.Count do
 		(
-			local list = CamFovControllers[i].KeyTimes;
+			local list = ExControllers[i].KeyValues;
 			local offset = objectOffsetDict.GetListOffset list;
 			if ( offset == -1 ) then
 			(
@@ -808,7 +786,22 @@ struct Sp2ModelAnimationDataFileHeader
 				objectOffsetDict.AddListOffset list offset;
 			)
 			
-			CamFovControllers[i].KeyTimesOffset = offset;
+			ExControllers[i].KeyValuesOffset = offset;
+		)
+		
+		for i = 1 to ExControllers.Count do
+		(
+			local list = ExControllers[i].KeyTimes;
+			local offset = objectOffsetDict.GetListOffset list;
+			if ( offset == -1 ) then
+			(
+				dataCursor = (ioAlign dataCursor 16);
+				offset = dataCursor - ctx.BaseOffset;
+				dataCursor += (4 * list.Count);
+				objectOffsetDict.AddListOffset list offset;
+			)
+			
+			ExControllers[i].KeyTimesOffset = offset;
 		)
 			
 		-- Write names in alphabetic order
@@ -828,19 +821,19 @@ struct Sp2ModelAnimationDataFileHeader
         ioWriteU32LE( AttachControllersOffset );
         ioWriteU32LE( CamControllersOffset );
         ioWriteU32LE( UnkControllersOffset );
-        ioWriteU32LE( CamFovControllersOffset );
+        ioWriteU32LE( ExControllersOffset );
         ioWriteU16LE( BoneControllerCount );
         ioWriteU16LE( AttachControllerCount );
         ioWriteU16LE( CamControllerCount );
         ioWriteU16LE( UnkControllerCount );
-        ioWriteU16LE( CamFovControllerCount );
+        ioWriteU16LE( ExControllerCount );
 		local structEnd = ioTell();
 		
 		WriteControllers ctx BoneControllersOffset BoneControllers;
 		WriteControllers ctx AttachControllersOffset AttachControllers;
 		WriteControllers ctx CamControllersOffset CamControllers;
 		WriteControllers ctx UnkControllersOffset UnkControllers;
-		WriteControllers ctx CamFovControllersOffset CamFovControllers;
+		WriteControllers ctx ExControllersOffset ExControllers;
 		
 		ioSeekSet( structEnd );
 		ctx.PopBaseOffset();

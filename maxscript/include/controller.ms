@@ -7,7 +7,8 @@ struct ObjectBasePose
 	Position,
 	Rotation,
 	Scale,
-	Fov
+	Fov,
+	Visibility
 )
 
 struct JfController
@@ -22,6 +23,7 @@ struct JfController
 	ResourceName,
 	DefaultCamFov = 45,
 	DefaultCamRot = EulerAngles 0 0 0,
+	CreateDummies,
 	
 	fn SecondsToFrames seconds fps =
 	(
@@ -46,14 +48,40 @@ struct JfController
 		)
 	),
 	
+	fn GetVisibilityFloat obj =
+	(
+		local visibility = 1.0f;
+		if ( classof obj.visibility == linear_float ) then
+		(
+			visibility = obj.visibility.controller.value;
+		)
+		else if ( classof obj.visibility == Booleanclass ) then
+		(
+			if ( obj.visibility ) then visibility = 1.0f;
+			else visibility = 0.0f;
+		)
+		else
+		(
+			assert false message:("Unsupported visibility controller: "+obj as string+" type:"+(classof obj.visibility as string));
+		)
+		
+		visibility;
+	),
+	
 	fn AddBasePose obj =
 	(
-		local fov = undefined;
-		if ( superClassOf obj == camera ) then fov = obj.Fov;
+		-- Get FOV value if the obj is a camera
+		local fov = DefaultCamFov;
+		if ( superClassOf obj == camera ) then 
+		(
+			fov = obj.Fov;
+		)
 		
+		-- Get visibility as float
+		local visibility = GetVisibilityFloat obj;
 		local basePose = (ObjectBasePose Object:obj Position:obj.Controller.Position \
 			Rotation:obj.Controller.Rotation Scale:obj.Controller.Scale \
-			Fov:fov);	
+			Fov:fov Visibility:visibility);	
 		append mObjBasePoses basePose;
 		basePose;
 	),
@@ -74,11 +102,13 @@ struct JfController
         for i = 1 to mObjBasePoses.Count do DeleteKeys mObjBasePoses[i].Object.Controller #allkeys
         for i = 1 to mObjBasePoses.Count do
         (
-            local obj = mObjBasePoses[i].Object;
-            obj.Controller.Position = mObjBasePoses[i].Position;
-            obj.Controller.Rotation = mObjBasePoses[i].Rotation;
-            obj.Controller.Scale = mObjBasePoses[i].Scale;
-			if ( superClassOf obj == camera ) then obj.Fov = mObjBasePoses[i].Fov;
+			local bp = mObjBasePoses[i];
+            local obj = bp.Object;
+            obj.Controller.Position = bp.Position;
+            obj.Controller.Rotation = bp.Rotation;
+            obj.Controller.Scale = bp.Scale;
+			if ( superClassOf obj == camera ) then obj.Fov = bp.Fov;
+			if ( classof obj.visibility == linear_float ) then obj.visibility.controller.value = bp.Visibility;
         )
 	),
 	
@@ -112,25 +142,33 @@ struct JfController
  		ctrlRot;
 	),
 	
-	fn ImportSanTrsController ctrl type =
+	fn ImportTrsController ctrl type =
 	(
 		local ctrlNode = getNodeByName ctrl.Name exact: true;
 		if ( ctrlNode == undefined ) then
 		(
-			print("Creating dummy for " + ctrl.Name + " because it does not exist in the scene.");
-			
 			if ( type == #cam ) then
+			(
 				ctrlNode = Freecamera name:ctrl.Name fov:DefaultCamFov nearclip:1 farclip:1000 nearrange:0 farrange:1000;
+			)
 			else
+			(
+				if ( not CreateDummies ) then
+				(
+					print("Skipping " + ctrl.Name + " because it does not exist in the scene.");
+					return ok; -- skip controller
+				)
+				
 				ctrlNode = dummy name:ctrl.Name;
+			)
 			
+			print("Created dummy for " + ctrl.Name + " because it does not exist in the scene.");
 			ctrlNode.Pos.Controller = TCB_position();
 			ctrlNode.Rotation.Controller = TCB_rotation();
 			ctrlNode.Scale.Controller = TCB_scale();
 			AddBasePose ctrlNode;
 		)
 		
-		--print ctrlNode.Name;
 		local basePose = GetBasePose ctrlNode;
 		local prevTranslation = undefined;
 		for i = 1 to ctrl.TranslationKeyCount do
@@ -177,13 +215,13 @@ struct JfController
 		if ( ctrl.ScaleKeyCount == 1 ) then at time animationRange.end ctrlNode.Controller.Scale = prevScale;
 	),
 	
-	fn ImportSanCamFovController ctrl =
+	fn ImportCamFovController ctrl =
 	(
 		local ctrlNode = getNodeByName ctrl.Name exact: true;
 		if ( ctrlNode == undefined ) then
-		(
+		(			
 			print("Creating dummy for " + ctrl.Name + " because it does not exist in the scene.");
-			ctrlNode = Freecamera name:ctrl.Name fov:DefaultCamFov nearclip:1 farclip:1000 nearrange:0 farrange:1000;
+			ctrlNode = Freecamera name:ctrl.Name fov:(radtodeg ctrl.BaseValue) nearclip:1 farclip:1000 nearrange:0 farrange:1000;
 			ctrlNode.Pos.Controller = TCB_position();
 			ctrlNode.Rotation.Controller = TCB_rotation();
 			ctrlNode.Scale.Controller = TCB_scale();
@@ -191,12 +229,61 @@ struct JfController
 		)
 		
 		local basePose = GetBasePose ctrlNode;
+		-- Update the base FOV here due to it being stored in the animation
+		basePose.Fov = radtodeg ctrl.BaseValue;
 		
+		local prevValue = undefined;
 		for i = 1 to ctrl.KeyCount do
 		(
 			at time (SecondsToFrames ctrl.KeyTimes[i] PlaybackSpeed)
-				ctrlNode.Fov = basePose.Fov + ctrl.KeyValues[i];
+			(
+				ctrlNode.Fov = radtodeg ctrl.KeyValues[i];
+				prevValue = ctrlNode.Fov; 
+			)
 		)
+		
+		if ( ctrl.KeyCount == 1 ) then at time animationRange.end ctrlNode.Fov = prevValue;
+	),
+	
+	fn UpdateVisController obj baseValue =
+	(
+		if ( classof obj.Visibility != linear_float ) then
+		(
+			-- Add visibility controller 
+			obj.Visibility = linear_float();
+		)
+		
+		-- Set base visibility in controller
+		obj.Visibility.Controller.Value = baseValue;
+		
+		-- Set base visibility in base pose
+		local basePose = GetBasePose obj;
+		basePose.Visibility = baseValue;
+	),
+	
+	fn ImportVisController ctrl =
+	(
+		local ctrlNode = getNodeByName ctrl.Name exact: true;
+		if ( ctrlNode == undefined ) then
+		(			
+			print("Creating dummy for " + ctrl.Name + " because it does not exist in the scene.");
+			ctrlNode = dummy name:ctrl.Name;
+		)
+		
+		-- Adds visibility controller if it doesnt exist, and updates it
+		UpdateVisController ctrlNode ctrl.BaseValue;
+
+		local prevValue = undefined;
+		for i = 1 to ctrl.KeyCount do
+		(
+			at time (SecondsToFrames ctrl.KeyTimes[i] PlaybackSpeed)
+			(
+				ctrlNode.Visibility.Controller.Value = ctrl.KeyValues[i];
+				prevValue = ctrlNode.Visibility.Controller.Value;
+			)
+		)
+		
+		if ( ctrl.KeyCount == 1 ) then at time animationRange.end ctrlNode.Visibility.Controller.Value = prevValue;
 	),
 	
 	fn ImportSan filePath =
@@ -214,7 +301,6 @@ struct JfController
         local durationInFrames = SecondsToFrames animation.Duration PlaybackSpeed;
 		
         animationRange = interval 0 durationInFrames;
-		--frameRate =fps;
         format "Importing animation with % frames (% sec)\n" durationInFrames animation.Duration;
 			
 		if ( mObjBasePoses == undefined ) then
@@ -222,11 +308,18 @@ struct JfController
 
         with animate on
         (
-            for ctrl in animation.BoneControllers do ImportSanTrsController ctrl #bone;
-			for ctrl in animation.AttachControllers do ImportSanTrsController ctrl #attach;
-			for ctrl in animation.CamControllers do ImportSanTrsController ctrl #cam;
-			for ctrl in animation.UnkControllers do ImportSanTrsController ctrl #unk;
-			for ctrl in animation.CamFovControllers do ImportSanCamFovController ctrl;
+            for ctrl in animation.BoneControllers do ImportTrsController ctrl #bone;
+			for ctrl in animation.AttachControllers do ImportTrsController ctrl #attach;
+			for ctrl in animation.CamControllers do ImportTrsController ctrl #cam;
+			for ctrl in animation.UnkControllers do ImportTrsController ctrl #unk;
+			for ctrl in animation.ExControllers do
+			(
+				case ctrl.SubType of
+				(
+					0: ImportVisController ctrl;
+					1: ImportCamFovController ctrl;
+				)
+			)
         )
 
 		resourceFile;
@@ -273,7 +366,7 @@ struct JfController
 			local keyTime = obj.Scale.Controller.Keys[i].Time;
 			at time keyTime
 			(
-				append ctrl.ScaleKeyValues ( Sp2ExportTransformScale obj.Controller.Scale ConvertToZUp GlobalScale );
+				append ctrl.ScaleKeyValues ( Sp2ExportTransformScale obj.Controller.Scale ConvertToZUp );
 				append ctrl.ScaleKeyTimes keyTime;
 			)
 		)
@@ -283,17 +376,40 @@ struct JfController
 	
 	fn CreateCamFovController obj =
 	(
-		local ctrl = Sp2ModelAnimationDataCamFovController();
+		local ctrl = Sp2ModelAnimationDataExController();
 		ctrl.Name = obj.Name;
-		ctrl.Field04 = 1;
+		ctrl.SubType = SP2_MODEL_ANIMATION_DATA_EX_CONTROLLER_TYPE_FOV;
 		
 		local basePose = GetBasePose obj;
+		ctrl.BaseValue = degtorad basePose.Fov;
+		
 		for i = 1 to obj.Fov.Controller.Keys.Count do
 		(
 			local t = obj.Fov.Controller.Keys[i].Time;
 			at time t
 			(
-				append ctrl.KeyValues ( obj.Fov.Controller.Keys[i].Value - basePose.Fov );
+				append ctrl.KeyValues ( degtorad obj.Fov.Controller.Keys[i].Value );
+				append ctrl.KeyTimes t;
+			)
+		)
+		
+		ctrl;
+	),
+	
+	fn CreateVisController obj =
+	(
+		local ctrl = Sp2ModelAnimationDataExController();
+		ctrl.Name = obj.Name;
+		ctrl.SubType = SP2_MODEL_ANIMATION_DATA_EX_CONTROLLER_TYPE_VIS;
+		
+		local basePose = GetBasePose obj;
+		ctrl.BaseValue = basePose.Visibility;		
+		for i = 1 to obj.Visibility.Controller.Keys.Count do
+		(
+			local t = obj.Visibility.Controller.Keys[i].Time;
+			at time t
+			(
+				append ctrl.KeyValues ( obj.Visibility.Controller.Keys[i].Value );
 				append ctrl.KeyTimes t;
 			)
 		)
@@ -318,15 +434,28 @@ struct JfController
 		(
 			for obj in objects do
 			(
-				if ( classOf obj == BoneGeometry or superClassOf obj == Helper ) then
+				if ( ( findString obj.Name "|" ) == 1 ) then
 				(
-					append mad.Data.BoneControllers ( CreateTrsController obj #bone );
+					-- special handling for external objs
+					if ( superClassOf obj == camera ) then
+					(
+						append mad.Data.CamControllers ( CreateTrsController obj #cam );
+						append mad.Data.ExControllers ( CreateCamFovController obj );
+					)
+					else
+					(
+						append mad.Data.AttachControllers ( CreateTrsController obj #attach );
+						append mad.Data.ExControllers ( CreateVisController obj );
+					)
 				)
-				else if ( superClassOf obj == camera ) then
+				else
 				(
-					append mad.Data.CamControllers ( CreateTrsController obj #cam );
-					append mad.Data.CamFovControllers ( CreateCamFovController obj );
-				)	
+					-- generic case
+					if ( classOf obj == BoneGeometry or superClassOf obj == Helper ) then
+					(
+						append mad.Data.BoneControllers ( CreateTrsController obj #bone );
+					)
+				)
 			)
 		)
 		

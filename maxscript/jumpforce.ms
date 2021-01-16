@@ -43,7 +43,7 @@ fn jfHandleFileAction filePath action =
 
 rollout jfInfoRollout "Jump Force Importer/Exporter"
 (
-	label lblVersion "Version 0.8 alpha" align:#center
+	label lblVersion "Version 0.9 alpha" align:#center
 	label lblAuthor "© 2020-2021 TGE" align:#center
 )
 
@@ -94,6 +94,7 @@ rollout jfAnmRollout "Animation" width:162 height:300
 	spinner spnCamRotX "" range:[0,1000000,90] width:50 across:3;
 	spinner spnCamRotY "" range:[0,1000000,0] width:50;
 	spinner spnCamRotZ "" range:[0,1000000,180] width:50;
+	checkbox chkCreateDummies "Create dummies for missing objects" checked:true;
 	
 	button btnSaveBasePose "Save base pose" across:2;
 	button btnLoadBasePose "Restore base pose" enabled:false;
@@ -105,6 +106,7 @@ rollout jfAnmRollout "Animation" width:162 height:300
 	on spnCamRotX changed state do g_jfController.DefaultCamRot = EulerAngles spnCamRotX.value spnCamRotY.value spnCamRotZ.value;
 	on spnCamRotY changed state do g_jfController.DefaultCamRot = EulerAngles spnCamRotX.value spnCamRotY.value spnCamRotZ.value;
 	on spnCamRotZ changed state do g_jfController.DefaultCamRot = EulerAngles spnCamRotX.value spnCamRotY.value spnCamRotZ.value;
+	on chkCreateDummies changed state do g_jfController.CreateDummies = state;
 	
 	on btnSaveBasePose pressed do
 	(
@@ -158,6 +160,7 @@ fn SetDefaults =
 	g_jfController.ResourceName = "";
 	g_jfController.DefaultCamFov = 45;
 	g_jfController.DefaultCamRot = EulerAngles 90 0 180;
+	g_jfController.CreateDummies = true;
 )
 
 fn main =

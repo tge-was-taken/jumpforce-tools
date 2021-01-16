@@ -165,10 +165,11 @@ typedef struct( u64 p )
 {
     SetRandomBackColor();
     u32 NameOffset;
-    u32 Field04;
+    u32 SubType;
     u32 KeyCount;
     u32 KeyTimesOffset;
     u32 KeyValuesOffset;
+    f32 BaseValue;
 
     local u64 next = FTell();
     FSeek( p + NameOffset );
@@ -184,24 +185,26 @@ typedef struct( u64 p )
     }
 
     FSeek( next );
-} Sp2ModelAnimationDataCamFovController <bgcolor=0x84773e, optimize=false>;
+} Sp2ModelAnimationDataExController <bgcolor=0x84773e, optimize=false>;
 
 typedef struct
 {
     local u64 p = FTell();
-    u32 Field00; // ? 4
+    u32 Field00; // version? 4
     f32 Duration; // duration of the animation
     u32 BoneControllersOffset; // skeletal animation
     u32 AttachControllersOffset; // animation of equipped items
     u32 CamControllersOffset; // camera animation
     u32 UnkControllersOffset; // ?
-    u32 CamFovControllersOffset; // camera FOV animation
+    u32 ExControllersOffset; // camera FOV animation, morphs
     u16 BoneControllerCount;
     u16 AttachControllerCount;
     u16 CamControllerCount;
     u16 UnkControllerCount;
     u16 CamFovControllerCount;
     local u64 next = FTell();
+
+    Assert( UnkControllerCount == 0 );
 
     FSeek( p + BoneControllersOffset ); 
     Sp2ModelAnimationDataPRSController BoneControllers( p )[ BoneControllerCount ];    
@@ -215,8 +218,8 @@ typedef struct
     FSeek( p + UnkControllersOffset ); 
     Sp2ModelAnimationDataPRSController UnkControllers( p )[ UnkControllerCount ];   
 
-    FSeek( p + CamFovControllersOffset ); 
-    Sp2ModelAnimationDataCamFovController CamFovControllers( p )[ CamFovControllerCount ];  
+    FSeek( p + ExControllersOffset ); 
+    Sp2ModelAnimationDataExController ExControllers( p )[ CamFovControllerCount ];  
 
     FSeek( next ); 
 } Sp2ModelAnimationDataFileHeader <optimize=false, bgcolor=0xcaa4e1>;
