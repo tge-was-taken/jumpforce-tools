@@ -4,6 +4,10 @@ Jump Force importer/exporter GUI for 3ds Max
 Created:	06/11/2020
 Author: 	Chris Weermann (aka TGE)
 Web page:	https://github.com/TGEnigma, https://checkpoint.cc/tge
+Credits:	
+			alphaZomega - For helping me fix the animation export code
+			jstpierre - Technical advice
+			
 Rivision History:
 
 	??.??.2020 v1.00
@@ -39,7 +43,7 @@ fn jfHandleFileAction filePath action =
 
 rollout jfInfoRollout "Jump Force Importer/Exporter"
 (
-	label lblVersion "Version 0.7 alpha" align:#center
+	label lblVersion "Version 0.8 alpha" align:#center
 	label lblAuthor "© 2020-2021 TGE" align:#center
 )
 
@@ -85,12 +89,22 @@ rollout jfAnmRollout "Animation" width:162 height:300
 (
 	spinner spnSpeed "Speed" range:[0,1000000,1] align:#left width:100;
 	edittext edtName "Name";
+	spinner spnCamFov "Base camera FOV" range:[0,1000000,45] align:#left width:100;
+	label lblCamRot "Base camera rotation (Euler degrees)" align:#left;
+	spinner spnCamRotX "" range:[0,1000000,90] width:50 across:3;
+	spinner spnCamRotY "" range:[0,1000000,0] width:50;
+	spinner spnCamRotZ "" range:[0,1000000,180] width:50;
+	
 	button btnSaveBasePose "Save base pose" across:2;
 	button btnLoadBasePose "Restore base pose" enabled:false;
 	button btnImport "Import" align:#center across:2;
 	button btnExport "Export" align:#center;
 	
 	on spnSpeed changed state do g_jfController.PlaybackSpeed = state;
+	on spnCamFov changed state do g_jfController.DefaultCamFov = state;
+	on spnCamRotX changed state do g_jfController.DefaultCamRot = EulerAngles spnCamRotX.value spnCamRotY.value spnCamRotZ.value;
+	on spnCamRotY changed state do g_jfController.DefaultCamRot = EulerAngles spnCamRotX.value spnCamRotY.value spnCamRotZ.value;
+	on spnCamRotZ changed state do g_jfController.DefaultCamRot = EulerAngles spnCamRotX.value spnCamRotY.value spnCamRotZ.value;
 	
 	on btnSaveBasePose pressed do
 	(
@@ -134,8 +148,22 @@ rollout jfAnmRollout "Animation" width:162 height:300
 	)
 )
 
+fn SetDefaults =
+(
+	-- Set JfController defaults to match UI defaults
+	g_jfController.ConvertToZUp = true;
+	g_jfController.GlobalScale = 100;
+	g_jfController.UseInverseBindPose = false;
+	g_jfController.PlaybackSpeed = 1;
+	g_jfController.ResourceName = "";
+	g_jfController.DefaultCamFov = 45;
+	g_jfController.DefaultCamRot = EulerAngles 90 0 180;
+)
+
 fn main =
 (
+	SetDefaults();
+	
 	-- adapted from ActorXImporter by Gildor
 	-- request position of previous window, if it was already opened
 	local x = 30;

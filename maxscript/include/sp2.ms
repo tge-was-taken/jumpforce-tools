@@ -241,7 +241,12 @@ fn Sp2ImportTransformTranslation t convertToZUp scl =
 	nt;
 )
 
-fn Sp2ImportTransformRotation r convertToZUp =
+fn quatDot left right =
+(
+	left.x * right.x + left.y * right.y + left.z * right.z + left.w * right.w;
+)
+
+fn Sp2ImportTransformRotation pr r convertToZUp =
 (
 	local nr = copy r;
 	if ( convertToZUp ) then
@@ -254,13 +259,34 @@ fn Sp2ImportTransformRotation r convertToZUp =
 		--nr = quat r.x r.z -r.y r.w;
 		
 		local aa = r as angleaxis;
-		nr = ( angleaxis aa.angle [aa.axis.x, aa.axis.z, -aa.axis.y] ) as quat;
+		local newAA = angleaxis aa.angle [aa.axis.x, aa.axis.z, -aa.axis.y];
+		nr = newAA as quat;
+-- 		if ( pr != undefined ) then
+-- 		(
+-- 			if ( ( r.z < 0 and nr.z > 0 ) or ( r.z < 0 and nr.z > 0 ) ) then nr = inverse nr;
+-- 			
+-- 			
+-- 			--if ( abs( ( nr as euler ).x ) == abs( ( r as euler ) ).x 
+-- 			--	 nr.x != r.x ) then
+-- 			
+-- 			local diff = pr * inverse nr;
+-- 			if ( not ( close_enough ( nr as EulerAngles ).x ( r as EulerAngles ).x 100000 ) ) then
+-- 			(
+-- 				nr = inverse nr; 
+-- 			)
+-- 			
+-- 			--if ( quatDot pr nr < 0.005 ) then nr = inverse nr; 
+-- 			--if ( nr.angle > 90 and r.angle < 90 ) then nr = inverse nr;
+-- 			--( abs ( nr.angle - pr.angle ) > 180 ) 
+-- 		)
+		
+		--if ( ( nr.z < 0 and r.z > 0 ) or ( nr.z > 0 and r.z < 0) ) then nr = inverse nr;
 	)
 	
 	nr;
 )
 
-fn Sp2ExportTransformRotation r convertToYUp =
+fn Sp2ExportTransformRotation pr r convertToYUp =
 (
 	local nr = copy r;
 	if ( convertToYUp ) then
@@ -273,7 +299,23 @@ fn Sp2ExportTransformRotation r convertToYUp =
 		--nr = quat r.x -r.z r.y r.w;
 		
 		local aa = r as angleaxis;
-		nr = ( angleaxis aa.angle [aa.axis.x, -aa.axis.z, aa.axis.y] ) as quat;
+		local aa2 = angleaxis aa.angle [aa.axis.x, -aa.axis.z, aa.axis.y];
+		nr = aa2 as quat;
+		if ( pr != undefined ) then 
+		(
+			--if ( ( r.z < 0 and nr.z > 0 ) ) then nr = inverse nr;
+			--if ( ( pr * conjugate nr ).w < 0.01 ) then nr = inverse nr; 
+			
+			--if ( nr.angle > 90 and r.angle < 90 ) then nr = inverse nr;
+			
+			--local diff = abs ( nr.angle - pr.angle );
+			--print diff;
+			
+			--print "AAA";
+			--nr = inverse nr;
+		)
+		
+		--if ( ( nr.z < 0 and r.z > 0 ) or ( nr.z > 0 and r.z < 0) ) then nr = inverse nr;
 	)
 	
 	nr
@@ -302,7 +344,7 @@ fn Sp2ImportTransformMatrix m convertToZUp scl =
 	local s = m.scalepart;
 	
 	t = Sp2ImportTransformTranslation t convertToZUp scl;
-	r = Sp2ImportTransformRotation r convertToZUp;
+	r = Sp2ImportTransformRotation undefined r convertToZUp;
 	s = Sp2ImportTransformScale s convertToZUp;
 	
 	m = r as matrix3;
@@ -351,7 +393,7 @@ fn Sp2ExportTransformMatrix m convertToYUp scl =
 	local s = m.scalepart;
 	
 	t = Sp2ExportTransformTranslation t convertToYUp scl;
-	r = Sp2ExportTransformRotation r convertToYUp;
+	r = Sp2ExportTransformRotation undefined r convertToYUp;
 	s = Sp2ExportTransformScale s convertToYUp;
 	
 	m = r as matrix3;

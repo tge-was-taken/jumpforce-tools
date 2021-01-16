@@ -96,27 +96,27 @@ fn Sp2ModelAnimationDataCompressRotation dec =
 	
 	if( maxIndex == 0 ) then
 	(
-		a = dec.y;
-		b = dec.z;
-		c = dec.w;
+		a = dec.y * sign;
+		b = dec.z * sign;
+		c = dec.w * sign;
 	)
 	else if( maxIndex == 1 ) then
 	(
-		a = dec.x;
-		b = dec.z;
-		c = dec.w;
+		a = dec.x * sign;
+		b = dec.z * sign;
+		c = dec.w * sign;
 	)
 	else if( maxIndex == 2 ) then
 	(
-		a = dec.x;
-		b = dec.y;
-		c = dec.w;
+		a = dec.x * sign;
+		b = dec.y * sign;
+		c = dec.w * sign;
 	)
 	else
 	(
-		a = dec.x;
-		b = dec.y;
-		c = dec.z;
+		a = dec.x * sign;
+		b = dec.y * sign;
+		c = dec.z * sign;
 	)
 	
 	local cmp = 0 as Integer64;

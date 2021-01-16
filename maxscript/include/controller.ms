@@ -20,6 +20,8 @@ struct JfController
 	GlobalScale = 100,
 	PlaybackSpeed = 1,
 	ResourceName,
+	DefaultCamFov = 45,
+	DefaultCamRot = EulerAngles 0 0 0,
 	
 	fn SecondsToFrames seconds fps =
 	(
@@ -94,16 +96,18 @@ struct JfController
 	
 	fn ConvertSp2RotationToControllerRotation rot t = (),
 	
-	fn ConvertControllerRotationToSp2Rotation ctrlRot t =
+	fn ConvertControllerRotationToSp2Rotation prevCtrlRot ctrlRot t =
 	(
 		local rotTfm = inverse ctrlRot;
-		local rot = Sp2ExportTransformRotation rotTfm ConvertToZUp;
+		local prevRotTfm = undefined;
+		if ( prevCtrlRot != undefined ) then prevRotTfm = inverse prevCtrlRot;
+		local rot = Sp2ExportTransformRotation prevRotTfm rotTfm ConvertToZUp;
 		rot;
 	),
 	
-	fn ConvertSp2RotationToControllerRotation rot t =
+	fn ConvertSp2RotationToControllerRotation prevRot rot t =
 	(
- 		local rotTfm = Sp2ImportTransformRotation rot ConvertToZUp;
+ 		local rotTfm = Sp2ImportTransformRotation prevRot rot ConvertToZUp;
  		local ctrlRot = inverse rotTfm;
  		ctrlRot;
 	),
@@ -116,7 +120,7 @@ struct JfController
 			print("Creating dummy for " + ctrl.Name + " because it does not exist in the scene.");
 			
 			if ( type == #cam ) then
-				ctrlNode = Freecamera name:ctrl.Name fov:45 nearclip:1 farclip:1000 nearrange:0 farrange:1000;
+				ctrlNode = Freecamera name:ctrl.Name fov:DefaultCamFov nearclip:1 farclip:1000 nearrange:0 farrange:1000;
 			else
 				ctrlNode = dummy name:ctrl.Name;
 			
@@ -128,34 +132,49 @@ struct JfController
 		
 		--print ctrlNode.Name;
 		local basePose = GetBasePose ctrlNode;
+		local prevTranslation = undefined;
 		for i = 1 to ctrl.TranslationKeyCount do
 		(
+			local translation = basePose.Position + ( Sp2ImportTransformTranslation ctrl.TranslationKeyValues[i] ConvertToZUp GlobalScale);
 			at time (SecondsToFrames ctrl.TranslationKeyTimes[i] PlaybackSpeed)
-			(
-				ctrlNode.Controller.Position = basePose.Position + ( Sp2ImportTransformTranslation ctrl.TranslationKeyValues[i] ConvertToZUp GlobalScale);
-			)
+				ctrlNode.Controller.Position = translation;
+			
+			prevTranslation = translation;
 		)
 
+		local prevRot = undefined;
 		for i = 1 to ctrl.RotationKeyCount do
 		(
 			local t = (SecondsToFrames ctrl.RotationKeyTimes[i] PlaybackSpeed);
-			local rot = ConvertSp2RotationToControllerRotation ctrl.RotationKeyValues[i] t;
+			local rot = ConvertSp2RotationToControllerRotation prevRot ctrl.RotationKeyValues[i] t;
 			at time t
 			(
-				ctrlNode.Controller.Rotation = rot;
+				if ( type == #cam ) then
+				(
+					ctrlNode.Controller.Rotation = DefaultCamRot as quat * rot;	
+				)
+				else
+				(
+					ctrlNode.Controller.Rotation = rot;	
+				)
 			)
+			
+			prevRot = rot;
 		)
 
+		local prevScale = undefined;
 		for i = 1 to ctrl.ScaleKeyCount do
 		(
+			local scl = Sp2ImportTransformScale ctrl.ScaleKeyValues[i] ConvertToZUp;;
 			at time (SecondsToFrames ctrl.ScaleKeyTimes[i] PlaybackSpeed)
-				ctrlNode.Controller.Scale = Sp2ImportTransformScale ctrl.ScaleKeyValues[i] ConvertToZUp;
+				ctrlNode.Controller.Scale = scl;
+			prevScale = scl;
 		)
 		
 		-- Add dummy keys for single frame animations so max doesn't delete them
-		if ( ctrl.TranslationKeyCount == 1 ) then at time animationRange.end ctrlNode.Controller.Position = basePose.Position + ( Sp2ImportTransformTranslation ctrl.TranslationKeyValues[1] ConvertToZUp GlobalScale);
-		if ( ctrl.RotationKeyCount == 1 ) then at time animationRange.end ctrlNode.Controller.Rotation = ConvertSp2RotationToControllerRotation ctrl.RotationKeyValues[1] t;
-		if ( ctrl.ScaleKeyCount == 1 ) then at time animationRange.end ctrlNode.Controller.Scale = Sp2ImportTransformScale ctrl.ScaleKeyValues[1] ConvertToZUp;
+		if ( ctrl.TranslationKeyCount == 1 ) then at time animationRange.end ctrlNode.Controller.Position = prevTranslation;
+		if ( ctrl.RotationKeyCount == 1 ) then at time animationRange.end ctrlNode.Controller.Rotation = prevRot;
+		if ( ctrl.ScaleKeyCount == 1 ) then at time animationRange.end ctrlNode.Controller.Scale = prevScale;
 	),
 	
 	fn ImportSanCamFovController ctrl =
@@ -164,7 +183,7 @@ struct JfController
 		if ( ctrlNode == undefined ) then
 		(
 			print("Creating dummy for " + ctrl.Name + " because it does not exist in the scene.");
-			ctrlNode = Freecamera name:ctrl.Name fov:45 nearclip:1 farclip:1000 nearrange:0 farrange:1000;
+			ctrlNode = Freecamera name:ctrl.Name fov:DefaultCamFov nearclip:1 farclip:1000 nearrange:0 farrange:1000;
 			ctrlNode.Pos.Controller = TCB_position();
 			ctrlNode.Rotation.Controller = TCB_rotation();
 			ctrlNode.Scale.Controller = TCB_scale();
@@ -213,12 +232,12 @@ struct JfController
 		resourceFile;
 	),
 	
-	fn CreateTrsController obj =
+	fn CreateTrsController obj type =
 	(
 		local ctrl = Sp2ModelAnimationDataTrsController();
 		ctrl.Name = obj.Name;
 		
-		local basePose = GetBasePose ctrl;
+		local basePose = GetBasePose obj;
 		for i = 1 to obj.Position.Controller.Keys.Count do
 		(
 			local keyTime = obj.Position.Controller.Keys[i].Time;
@@ -230,14 +249,23 @@ struct JfController
 			)
 		)
 		
+		local prevRot = undefined;
 		for i = 1 to obj.Rotation.Controller.Keys.Count do
 		(
 			local keyTime = obj.Rotation.Controller.Keys[i].Time;
 			at time keyTime
 			(
-				append ctrl.RotationKeyValues (ConvertControllerRotationToSp2Rotation obj.Controller.Rotation keyTime);
+				local keyValue = obj.Controller.Rotation;
+				if ( type == #cam ) then
+				(
+					keyValue = ( inverse ( DefaultCamRot as quat ) ) * keyValue;
+				)
+				
+				append ctrl.RotationKeyValues (ConvertControllerRotationToSp2Rotation prevRot keyValue keyTime);
 				append ctrl.RotationKeyTimes keyTime;
 			)
+			
+			prevRot = obj.Controller.Rotation;
 		)
 		
 		for i = 1 to obj.Scale.Controller.Keys.Count do
@@ -275,8 +303,6 @@ struct JfController
 	
 	fn ExportSan filePath =
 	(
-		print mObjBasePoses;
-		
 		local fileStrm = ioOpenFileWrite( filePath );
 		ioSetStream fileStrm filePath;
 		
@@ -294,11 +320,11 @@ struct JfController
 			(
 				if ( classOf obj == BoneGeometry or superClassOf obj == Helper ) then
 				(
-					append mad.Data.BoneControllers ( CreateTrsController obj );
+					append mad.Data.BoneControllers ( CreateTrsController obj #bone );
 				)
 				else if ( superClassOf obj == camera ) then
 				(
-					append mad.Data.CamControllers ( CreateTrsController obj );
+					append mad.Data.CamControllers ( CreateTrsController obj #cam );
 					append mad.Data.CamFovControllers ( CreateCamFovController obj );
 				)	
 			)
